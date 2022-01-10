@@ -1,4 +1,9 @@
 /// Used to send a result to a [`Promise`].
+///
+/// You must call [`Self::send`] with a value eventually.
+///
+/// If you drop the `Sender` without putting a value into it,
+/// it will cause the connected [`Promise`] to panic when polled.
 #[must_use = "You should call Sender::send with the result"]
 pub struct Sender<T>(std::sync::mpsc::Sender<T>);
 
@@ -15,6 +20,10 @@ impl<T> Sender<T> {
 
 /// A promise that waits for the reception of a single value,
 /// presumably from some async task.
+///
+/// A `Promise` starts out waiting for a value.
+/// Each time you call a member method it will check if that value is ready.
+/// Once ready, the `Promise` will store the value until you drop the `Promise`.
 ///
 /// Example:
 ///
@@ -47,6 +56,8 @@ impl<T: Send + 'static> Promise<T> {
     /// Create a [`Promise`] and a corresponding [`Sender`].
     ///
     /// Put the promised value into the sender when it is ready.
+    /// If you drop the `Sender` without putting a value into it,
+    /// it will cause a panic when polling the `Promise`.
     ///
     /// See also [`Self::spawn_blocking`], [`Self::spawn_async`] and [`Self::spawn_thread`].
     pub fn new() -> (Sender<T>, Self) {
@@ -72,6 +83,8 @@ impl<T: Send + 'static> Promise<T> {
     ///
     /// The first argument is the name of the thread you spawn, passed to [`std::thread::Builder::name`].
     /// It shows up in panic messages.
+    ///
+    /// This is a convenience method, using [`Self::new`] and [`std::thread::Builder`].
     ///
     /// If you are compiling with the "tokio" feature, you may want to use [`Self::spawn_blocking`] or [`Self::spawn_async`] instead.
     ///
@@ -99,6 +112,8 @@ impl<T: Send + 'static> Promise<T> {
     /// This is a simple mechanism to offload a heavy function/closure to be processed in the thread pool for blocking CPU work.
     ///
     /// It can't do any async code. For that, use [`Self::spawn_async`].
+    ///
+    /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn`] and [`tokio::task::block_in_place`].
     ///
     /// ```
     /// # fn something_cpu_intensive() {}
@@ -130,6 +145,8 @@ impl<T: Send + 'static> Promise<T> {
     /// See the [tokio docs](https://docs.rs/tokio/1.15.0/tokio/index.html#cpu-bound-tasks-and-blocking-code) for more details about
     /// CPU-bound tasks vs async IO tasks.
     ///
+    /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn`].
+    ///
     /// ```
     /// # async fn something_async() {}
     /// let promise = Promise::spawn_async(async move { something_async().await });
@@ -142,6 +159,8 @@ impl<T: Send + 'static> Promise<T> {
     }
 
     /// Polls the promise and either returns a reference to the data, or [`None`] if still pending.
+    ///
+    /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn ready(&self) -> Option<&T> {
         match self.poll() {
             std::task::Poll::Pending => None,
@@ -150,6 +169,8 @@ impl<T: Send + 'static> Promise<T> {
     }
 
     /// Polls the promise and either returns a mutable reference to the data, or [`None`] if still pending.
+    ///
+    /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn ready_mut(&mut self) -> Option<&mut T> {
         match self.poll_mut() {
             std::task::Poll::Pending => None,
@@ -158,21 +179,29 @@ impl<T: Send + 'static> Promise<T> {
     }
 
     /// Returns either the completed promise object or the promise itself if it is not completed yet.
+    ///
+    /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn try_take(self) -> Result<T, Self> {
         self.data.try_take().map_err(|data| Self { data })
     }
 
     /// Block execution until ready, then returns a reference to the value.
+    ///
+    /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn block_until_ready(&self) -> &T {
         self.data.block_until_ready()
     }
 
     /// Block execution until ready, then returns a mutable reference to the value.
+    ///
+    /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn block_until_ready_mut(&mut self) -> &mut T {
         self.data.block_until_ready_mut()
     }
 
     /// Block execution until ready, then returns the promised value and consumes the `Promise`.
+    ///
+    /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn block_and_take(self) -> T {
         self.data.block_until_ready();
         match self.data {
@@ -183,12 +212,16 @@ impl<T: Send + 'static> Promise<T> {
 
     /// Returns either a reference to the ready value [`std::task::Poll::Ready`]
     /// or [`std::task::Poll::Pending`].
+    ///
+    /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn poll(&self) -> std::task::Poll<&T> {
         self.data.poll()
     }
 
     /// Returns either a mut reference to the ready value in a [`std::task::Poll::Ready`]
     /// or a [`std::task::Poll::Pending`].
+    ///
+    /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn poll_mut(&mut self) -> std::task::Poll<&mut T> {
         self.data.poll_mut()
     }
@@ -225,9 +258,8 @@ impl<T: Send + 'static> PromiseImpl<T> {
             Self::Pending(ref rx) => match rx.try_recv() {
                 Ok(value) => Ok(value),
                 Err(std::sync::mpsc::TryRecvError::Empty) => Err(self),
-                // we can't really handle this case, but this should only happen on panic unwinding?
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    panic!("Channel receiver disconnected")
+                    panic!("The Promise Sender was dropped")
                 }
             },
             Self::Ready(value) => Ok(value),
@@ -238,21 +270,25 @@ impl<T: Send + 'static> PromiseImpl<T> {
     fn poll(&self) -> std::task::Poll<&T> {
         match self {
             Self::Pending(rx) => {
-                if let Ok(value) = rx.try_recv() {
-                    // SAFETY: This is safe since Promise (and PromiseData) are !Sync and thus
-                    // need external synchronization anyway. We can only transition from
-                    // Pending->Ready, not the other way around, so once we're Ready we'll
-                    // stay ready.
-                    unsafe {
-                        let myself = self as *const Self as *mut Self;
-                        *myself = Self::Ready(value);
+                match rx.try_recv() {
+                    Ok(value) => {
+                        // SAFETY: This is safe since Promise (and PromiseData) are !Sync and thus
+                        // need external synchronization anyway. We can only transition from
+                        // Pending->Ready, not the other way around, so once we're Ready we'll
+                        // stay ready.
+                        unsafe {
+                            let myself = self as *const Self as *mut Self;
+                            *myself = Self::Ready(value);
+                        }
+                        match self {
+                            Self::Ready(ref value) => std::task::Poll::Ready(value),
+                            Self::Pending(_) => unreachable!(),
+                        }
                     }
-                    match self {
-                        Self::Ready(ref value) => std::task::Poll::Ready(value),
-                        Self::Pending(_) => unreachable!(),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => std::task::Poll::Pending,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        panic!("The Promise Sender was dropped")
                     }
-                } else {
-                    std::task::Poll::Pending
                 }
             }
             Self::Ready(ref value) => std::task::Poll::Ready(value),
@@ -262,7 +298,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
     fn block_until_ready_mut(&mut self) -> &mut T {
         match self {
             Self::Pending(rx) => {
-                let value = rx.recv().unwrap();
+                let value = rx.recv().expect("The Promise Sender was dropped");
                 *self = Self::Ready(value);
                 match self {
                     Self::Ready(ref mut value) => value,
@@ -277,7 +313,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
     fn block_until_ready(&self) -> &T {
         match self {
             Self::Pending(rx) => {
-                let value = rx.recv().unwrap();
+                let value = rx.recv().expect("The Promise Sender was dropped");
                 // SAFETY: This is safe since `Promise` (and `PromiseData`) are `!Sync` and thus
                 // need external synchronization anyway. We can only transition from
                 // Pending->Ready, not the other way around, so once we're Ready we'll
