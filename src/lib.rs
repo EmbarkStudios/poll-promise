@@ -29,8 +29,8 @@
 //! which will spawn tasks in the surrounding tokio runtime.
 //!
 //! ### `web`
-//! If you enable the `web` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_blocking`]
-//! which will spawn tasks using [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
+//! If you enable the `web` feature you can use [`Promise::spawn_async`] which will spawn tasks using
+//! [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
 
 // BEGIN - Embark standard lints v5 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section

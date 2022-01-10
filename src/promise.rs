@@ -79,45 +79,6 @@ impl<T: Send + 'static> Promise<T> {
         }
     }
 
-    /// Spawn a blocking closure in a background task.
-    ///
-    /// You need to compile `poll-promise` with either the "tokio" or "web" feature for this to be available.
-    ///
-    /// ## tokio
-    /// This is a simple mechanism to offload a heavy function/closure to be processed in the thread pool for blocking CPU work.
-    ///
-    /// It can't do any async code. For that, use [`Self::spawn_async`].
-    ///
-    /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn`] and [`tokio::task::block_in_place`].
-    ///
-    /// ``` no_run
-    /// # fn something_cpu_intensive() {}
-    /// # use poll_promise::Promise;
-    /// let promise = Promise::spawn_blocking(move || something_cpu_intensive());
-    /// ```
-    #[cfg(any(feature = "tokio", feature = "web"))]
-    pub fn spawn_blocking<F>(f: F) -> Self
-    where
-        F: FnOnce() -> T + Send + 'static,
-    {
-        let (sender, promise) = Self::new();
-
-        #[cfg(all(feature = "tokio", feature = "web"))]
-        compile_error!("You cannot specify both the 'tokio' and 'web' feature");
-
-        #[cfg(feature = "tokio")]
-        {
-            tokio::task::spawn(async move { sender.send(tokio::task::block_in_place(f)) });
-        }
-
-        #[cfg(feature = "web")]
-        {
-            wasm_bindgen_futures::spawn_local(async move { sender.send(f()) });
-        }
-
-        promise
-    }
-
     /// Spawn a future.
     ///
     /// You need to compile `poll-promise` with either the "tokio" or "web" feature for this to be available.
@@ -160,6 +121,32 @@ impl<T: Send + 'static> Promise<T> {
             wasm_bindgen_futures::spawn_local(async move { sender.send(future.await) });
         }
 
+        promise
+    }
+
+    /// Spawn a blocking closure in a background task.
+    ///
+    /// You need to compile `poll-promise` with the "tokio" feature for this to be available.
+    ///
+    /// ## tokio
+    /// This is a simple mechanism to offload a heavy function/closure to be processed in the thread pool for blocking CPU work.
+    ///
+    /// It can't do any async code. For that, use [`Self::spawn_async`].
+    ///
+    /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn`] and [`tokio::task::block_in_place`].
+    ///
+    /// ``` no_run
+    /// # fn something_cpu_intensive() {}
+    /// # use poll_promise::Promise;
+    /// let promise = Promise::spawn_blocking(move || something_cpu_intensive());
+    /// ```
+    #[cfg(feature = "tokio")]
+    pub fn spawn_blocking<F>(f: F) -> Self
+    where
+        F: FnOnce() -> T + Send + 'static,
+    {
+        let (sender, promise) = Self::new();
+        tokio::task::spawn(async move { sender.send(tokio::task::block_in_place(f)) });
         promise
     }
 
