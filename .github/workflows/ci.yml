@@ -1,12 +1,11 @@
 # TODO: Replace this line with the commented ones to actually run the action in your repo(s)
-on: public
-# on:
-#   push:
-#     branches:
-#       - main
-#     tags:
-#       - "*"
-#   pull_request:
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+  pull_request:
 
 name: CI
 jobs:
@@ -180,7 +179,7 @@ jobs:
 
   # TODO: Remove this job if you don't publish container images on each release
   # TODO: Create a repository on DockerHub with the same name as the GitHub repo
-  # TODO: Add the new repo to the buildbot group with read & write permissions 
+  # TODO: Add the new repo to the buildbot group with read & write permissions
   # TODO: Add the embarkbot dockerhub password to the repo secrets as DOCKERHUB_PASSWORD
   publish-container-images:
     name: Publish container images
@@ -195,7 +194,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
       - name: Login to Dockerhub
-        uses: docker/login-action@v1 
+        uses: docker/login-action@v1
         with:
           username: embarkbot
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
