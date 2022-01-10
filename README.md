@@ -37,6 +37,13 @@ if let Some(result) = promise.ready() {
 
 If you enable the `tokio` feature you can use `poll-promise` with the [tokio](https://github.com/tokio-rs/tokio) runtime.
 
+### Caveat
+The crate is primarily useful as a high-level building block in apps.
+
+This crate provides convenience methods to spawn threads and tokio tasks, and methods that block on waiting for a result.
+This is gererally a bad idea to do in a library, as decisions about execution environments and thread blocking should be left to the app.
+So we do not recommend using this crate for libraries in its current state.
+
 ## Contribution
 
 [![Contributor Covenant](https://img.shields.io/badge/contributor%20covenant-v1.4-ff69b4.svg)](../main/CODE_OF_CONDUCT.md)
