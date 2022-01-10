@@ -13,5 +13,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial commit - add the `Promise` type.
 
-[Unreleased]: https://github.com/EmbarkStudios/poll-promise/compare/0.1.1...HEAD
+[Unreleased]: https://github.com/EmbarkStudios/poll-promise/compare/0.1.0...HEAD
 [0.1.0]: https://github.com/EmbarkStudios/poll-promise/releases/tag/0.1.0
