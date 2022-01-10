@@ -79,36 +79,56 @@ impl<T: Send + 'static> Promise<T> {
         }
     }
 
-    /// Spawn a blocking closure in a background thread.
+    /// Spawn a future.
     ///
-    /// The first argument is the name of the thread you spawn, passed to [`std::thread::Builder::name`].
-    /// It shows up in panic messages.
+    /// You need to compile `poll-promise` with either the "tokio" or "web" feature for this to be available.
     ///
-    /// This is a convenience method, using [`Self::new`] and [`std::thread::Builder`].
+    /// ## tokio
+    /// This should be used for spawning asynchronous work that does _not_ do any heavy CPU computations
+    /// as that will block other spawned tasks and will delay them. For example network IO, timers, etc.
     ///
-    /// If you are compiling with the "tokio" feature, you may want to use [`Self::spawn_blocking`] or [`Self::spawn_async`] instead.
+    /// These type of future can have manually blocking code within it though, but has to then manually use
+    /// [`tokio::task::block_in_place`](https://docs.rs/tokio/1.15.0/tokio/task/fn.block_in_place.html) on that,
+    /// or `.await` that future.
     ///
-    /// ```
-    /// # fn something_slow() {}
+    /// If you have a function or closure that you just want to offload to processed in the background, use the [`Self::spawn_blocking`] function instead.
+    ///
+    /// See the [tokio docs](https://docs.rs/tokio/1.15.0/tokio/index.html#cpu-bound-tasks-and-blocking-code) for more details about
+    /// CPU-bound tasks vs async IO tasks.
+    ///
+    /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn`].
+    ///
+    /// ## Example
+    /// ``` no_run
+    /// # async fn something_async() {}
     /// # use poll_promise::Promise;
-    /// let promise = Promise::spawn_thread("slow_operation", move || something_slow());
+    /// let promise = Promise::spawn_async(async move { something_async().await });
     /// ```
-    pub fn spawn_thread<F>(thread_name: impl Into<String>, f: F) -> Self
-    where
-        F: FnOnce() -> T + Send + 'static,
-    {
+    #[cfg(any(feature = "tokio", feature = "web"))]
+    pub fn spawn_async(future: impl std::future::Future<Output = T> + 'static + Send) -> Self {
         let (sender, promise) = Self::new();
-        std::thread::Builder::new()
-            .name(thread_name.into())
-            .spawn(move || sender.send(f()))
-            .expect("Failed to spawn thread");
+
+        #[cfg(all(feature = "tokio", feature = "web"))]
+        compile_error!("You cannot specify both the 'tokio' and 'web' feature");
+
+        #[cfg(feature = "tokio")]
+        {
+            tokio::task::spawn(async move { sender.send(future.await) });
+        }
+
+        #[cfg(feature = "web")]
+        {
+            wasm_bindgen_futures::spawn_local(async move { sender.send(future.await) });
+        }
+
         promise
     }
 
-    /// Spawn a blocking closure in a tokio task.
+    /// Spawn a blocking closure in a background task.
     ///
-    /// This function is only available if you compile `poll-promise` with the "tokio" feature.
+    /// You need to compile `poll-promise` with the "tokio" feature for this to be available.
     ///
+    /// ## tokio
     /// This is a simple mechanism to offload a heavy function/closure to be processed in the thread pool for blocking CPU work.
     ///
     /// It can't do any async code. For that, use [`Self::spawn_async`].
@@ -130,33 +150,30 @@ impl<T: Send + 'static> Promise<T> {
         promise
     }
 
-    /// Spawn a light-weight future.
+    /// Spawn a blocking closure in a background thread.
     ///
-    /// This function is only available if you compile `poll-promise` with the "tokio" feature.
+    /// The first argument is the name of the thread you spawn, passed to [`std::thread::Builder::name`].
+    /// It shows up in panic messages.
     ///
-    /// This should be used for spawning asynchronous work that does _not_ do any heavy CPU computations
-    /// as that will block other spawned tasks and will delay them. For example network IO, timers, etc.
+    /// This is a convenience method, using [`Self::new`] and [`std::thread::Builder`].
     ///
-    /// These type of future can have manually blocking code within it though, but has to then manually use
-    /// [`tokio::task::block_in_place`](https://docs.rs/tokio/1.15.0/tokio/task/fn.block_in_place.html) on that,
-    /// or `.await` that future.
+    /// If you are compiling with the "tokio" or "web" features, you should use [`Self::spawn_blocking`] or [`Self::spawn_async`] instead.
     ///
-    /// If you have a function or closure that you just want to offload to processed in the background, use the [`Self::spawn_blocking`] function instead.
-    ///
-    /// See the [tokio docs](https://docs.rs/tokio/1.15.0/tokio/index.html#cpu-bound-tasks-and-blocking-code) for more details about
-    /// CPU-bound tasks vs async IO tasks.
-    ///
-    /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn`].
-    ///
-    /// ``` no_run
-    /// # async fn something_async() {}
-    /// # use poll_promise::Promise;
-    /// let promise = Promise::spawn_async(async move { something_async().await });
     /// ```
-    #[cfg(feature = "tokio")]
-    pub fn spawn_async(future: impl std::future::Future<Output = T> + 'static + Send) -> Self {
+    /// # fn something_slow() {}
+    /// # use poll_promise::Promise;
+    /// let promise = Promise::spawn_thread("slow_operation", move || something_slow());
+    /// ```
+    #[cfg(not(target_arch = "wasm32"))] // can't spawn threads in wasm.
+    pub fn spawn_thread<F>(thread_name: impl Into<String>, f: F) -> Self
+    where
+        F: FnOnce() -> T + Send + 'static,
+    {
         let (sender, promise) = Self::new();
-        tokio::task::spawn(async move { sender.send(future.await) });
+        std::thread::Builder::new()
+            .name(thread_name.into())
+            .spawn(move || sender.send(f()))
+            .expect("Failed to spawn thread");
         promise
     }
 

@@ -18,7 +18,7 @@ include = [
 ]
 
 [package.metadata.docs.rs]
-all-features = true
+features = ["tokio"]
 
 [lib]
 
@@ -26,3 +26,10 @@ all-features = true
 static_assertions = "1.1"
 
 tokio = { version = "1", features = ["rt", "rt-multi-thread"], optional = true }
+
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+
+[features]
+# Allow spawning a task when running in a web browser.
+web = ["wasm-bindgen", "wasm-bindgen-futures"]
