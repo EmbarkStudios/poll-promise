@@ -20,8 +20,17 @@
 //! }
 //! ```
 //!
-//! If you enable the `tokio` feature you can use `poll-promise` with the [tokio](https://github.com/tokio-rs/tokio)
-//! runtime to run `async` tasks using [`Promise::spawn_async`] and [`Promise::spawn_blocking`].
+//! ## Features
+//! `poll-promise` can be used with any async runtime, but a few convenience methods are added
+//! when compiled with the following features:
+//!
+//! ### `tokio`
+//! If you enable the `tokio` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_blocking`]
+//! which will spawn tasks in the surrounding tokio runtime.
+//!
+//! ### `web`
+//! If you enable the `web` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_blocking`]
+//! which will spawn tasks using [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
 
 // BEGIN - Embark standard lints v5 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section
