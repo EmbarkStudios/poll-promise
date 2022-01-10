@@ -115,8 +115,9 @@ impl<T: Send + 'static> Promise<T> {
     ///
     /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn`] and [`tokio::task::block_in_place`].
     ///
-    /// ```
+    /// ``` no_run
     /// # fn something_cpu_intensive() {}
+    /// # use poll_promise::Promise;
     /// let promise = Promise::spawn_blocking(move || something_cpu_intensive());
     /// ```
     #[cfg(feature = "tokio")]
@@ -147,8 +148,9 @@ impl<T: Send + 'static> Promise<T> {
     ///
     /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn`].
     ///
-    /// ```
+    /// ``` no_run
     /// # async fn something_async() {}
+    /// # use poll_promise::Promise;
     /// let promise = Promise::spawn_async(async move { something_async().await });
     /// ```
     #[cfg(feature = "tokio")]
