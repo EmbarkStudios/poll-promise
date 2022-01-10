@@ -6,29 +6,36 @@
 
 <div align="center">
 
-<!--- FIXME: Pick an emoji and name your project! --->
-# 🌻 `opensource-template`
+# ⌛ `poll-promise`
 
-<!--- FIXME: Write short catchy description/tagline of project --->
-**Template for creating new open source repositories that follow the Embark open source guidelines**
+**A Rust promise for games and immediate mode GUIs**
 
-<!--- FIXME: Update crate, repo and CI workflow names here! Remove any that are not relevant --->
-    
 [![Embark](https://img.shields.io/badge/embark-open%20source-blueviolet.svg)](https://embark.dev)
 [![Embark](https://img.shields.io/badge/discord-ark-%237289da.svg?logo=discord)](https://discord.gg/dAuKfZS)
-[![Crates.io](https://img.shields.io/crates/v/rust-gpu.svg)](https://crates.io/crates/rust-gpu)
-[![Docs](https://docs.rs/rust-gpu/badge.svg)](https://docs.rs/rust-gpu)
-[![dependency status](https://deps.rs/repo/github/EmbarkStudios/rust-gpu/status.svg)](https://deps.rs/repo/github/EmbarkStudios/rust-gpu)
+[![Crates.io](https://img.shields.io/crates/v/poll-promise.svg)](https://crates.io/crates/poll-promise)
+[![Docs](https://docs.rs/poll-promise/badge.svg)](https://docs.rs/poll-promise)
+[![dependency status](https://deps.rs/repo/github/EmbarkStudios/poll-promise/status.svg)](https://deps.rs/repo/github/EmbarkStudios/poll-promise)
 [![Build status](https://github.com/EmbarkStudios/physx-rs/workflows/CI/badge.svg)](https://github.com/EmbarkStudios/physx-rs/actions)
 </div>
 
-## TEMPLATE INSTRUCTIONS
+## Description
 
-1. Create a new repository under EmbarkStudios using this template.
-1. __Title:__ Change the first line of this README to the name of your project, and replace the sunflower with an emoji that represents your project. 🚨 Your emoji selection is critical.
-1. __Badges:__ In the badges section above, change the repo name in each URL. If you are creating something other than a Rust crate, remove the crates.io and docs badges (and feel free to add more appropriate ones for your language).
-1. __CI:__ In `./github/workflows/` rename `rust-ci.yml` (or the appropriate config for your language) to `ci.yml`. And go over it and adapt it to work for your project
-1. __Cleanup:__ Remove this section of the README and any unused files (such as configs for other languages) from the repo.
+`poll-promise` is a Rust crate for polling the result of a concurrent (e.g. `async`) operation. This is in particular useful in games and immediate mode GUI:s, where one often wants to start a background operation and then ask "are we there yet?" on each subsequent frame until the operation completes.
+
+Example:
+
+``` rust
+let promise = poll_promise::Promise::spawn_thread("slow_operation", something_slow);
+
+// Then in the game loop or immediate mode GUI code:
+if let Some(result) = promise.ready() {
+    // Use/show result
+} else {
+    // Show a loading icon
+}
+```
+
+If you enable the `tokio` feature you can use `poll-promise` with the [tokio](https://github.com/tokio-rs/tokio) runtime.
 
 ## Contribution
 

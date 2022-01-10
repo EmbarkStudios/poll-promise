@@ -1,0 +1,28 @@
+[package]
+name = "poll-promise"
+version = "0.1.0"
+authors = ["Embark <opensource@embark-studios.com>"]
+license = "MIT OR Apache-2.0"
+description = "Poll the result of an async operation in a game or immediate mode GUI."
+edition = "2021"
+homepage = "https://github.com/EmbarkStudios/poll-promise"
+repository = "https://github.com/EmbarkStudios/poll-promise"
+readme = "README.md"
+categories = ["asynchronous"]
+keywords = ["promise", "poll", "async", "gamedev", "gui"]
+include = [
+  "LICENSE-APACHE",
+  "LICENSE-MIT",
+  "**/*.rs",
+  "Cargo.toml",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+
+[dependencies]
+static_assertions = "1.1"
+
+tokio = { version = "1", features = ["rt", "rt-multi-thread"], optional = true }
