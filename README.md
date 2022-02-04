@@ -44,6 +44,12 @@ This crate provides convenience methods to spawn threads and tokio tasks, and me
 This is gererally a bad idea to do in a library, as decisions about execution environments and thread blocking should be left to the app.
 So we do not recommend using this crate for libraries in its current state.
 
+## See also
+Similar functionality is provided by:
+
+* [`eventuals::Eventual`](https://docs.rs/eventuals/latest/eventuals/struct.Eventual.html)
+* [`tokio::sync::watch::channel`](https://docs.rs/tokio/latest/tokio/sync/watch/fn.channel.html)
+
 ## Contribution
 
 [![Contributor Covenant](https://img.shields.io/badge/contributor%20covenant-v1.4-ff69b4.svg)](../main/CODE_OF_CONDUCT.md)
