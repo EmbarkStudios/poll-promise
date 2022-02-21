@@ -81,8 +81,6 @@ impl<T: Send + 'static> Promise<T> {
 
     /// Spawn a future.
     ///
-    /// You need to compile `poll-promise` with either the "tokio" or "web" feature for this to be available.
-    ///
     /// ## tokio
     /// This should be used for spawning asynchronous work that does _not_ do any heavy CPU computations
     /// as that will block other spawned tasks and will delay them. For example network IO, timers, etc.
@@ -105,6 +103,7 @@ impl<T: Send + 'static> Promise<T> {
     /// let promise = Promise::spawn_async(async move { something_async().await });
     /// ```
     #[cfg(any(feature = "tokio", feature = "web"))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "tokio", feature = "web"))))]
     pub fn spawn_async(future: impl std::future::Future<Output = T> + 'static + Send) -> Self {
         let (sender, promise) = Self::new();
 
@@ -126,8 +125,6 @@ impl<T: Send + 'static> Promise<T> {
 
     /// Spawn a blocking closure in a background task.
     ///
-    /// You need to compile `poll-promise` with the "tokio" feature for this to be available.
-    ///
     /// ## tokio
     /// This is a simple mechanism to offload a heavy function/closure to be processed in the thread pool for blocking CPU work.
     ///
@@ -141,6 +138,7 @@ impl<T: Send + 'static> Promise<T> {
     /// let promise = Promise::spawn_blocking(move || something_cpu_intensive());
     /// ```
     #[cfg(feature = "tokio")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
     pub fn spawn_blocking<F>(f: F) -> Self
     where
         F: FnOnce() -> T + Send + 'static,
@@ -165,6 +163,7 @@ impl<T: Send + 'static> Promise<T> {
     /// let promise = Promise::spawn_thread("slow_operation", move || something_slow());
     /// ```
     #[cfg(not(target_arch = "wasm32"))] // can't spawn threads in wasm.
+    #[cfg_attr(docsrs, doc(cfg(not(target_arch = "wasm32"))))]
     pub fn spawn_thread<F>(thread_name: impl Into<String>, f: F) -> Self
     where
         F: FnOnce() -> T + Send + 'static,
