@@ -46,6 +46,9 @@ impl<T> Sender<T> {
 #[must_use]
 pub struct Promise<T: Send + 'static> {
     data: PromiseImpl<T>,
+
+    #[cfg(feature = "tokio")]
+    join_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 // Ensure that Promise is !Sync, confirming the safety of the unsafe code.
@@ -68,6 +71,9 @@ impl<T: Send + 'static> Promise<T> {
             Sender(tx),
             Self {
                 data: PromiseImpl::Pending(rx),
+
+                #[cfg(feature = "tokio")]
+                join_handle: None,
             },
         )
     }
@@ -76,6 +82,9 @@ impl<T: Send + 'static> Promise<T> {
     pub fn from_ready(value: T) -> Self {
         Self {
             data: PromiseImpl::Ready(value),
+
+            #[cfg(feature = "tokio")]
+            join_handle: None,
         }
     }
 
@@ -106,14 +115,16 @@ impl<T: Send + 'static> Promise<T> {
     /// ```
     #[cfg(any(feature = "tokio", feature = "web"))]
     pub fn spawn_async(future: impl std::future::Future<Output = T> + 'static + Send) -> Self {
-        let (sender, promise) = Self::new();
+        #[allow(unused_mut)]
+        let (sender, mut promise) = Self::new();
 
         #[cfg(all(feature = "tokio", feature = "web"))]
         compile_error!("You cannot specify both the 'tokio' and 'web' feature");
 
         #[cfg(feature = "tokio")]
         {
-            tokio::task::spawn(async move { sender.send(future.await) });
+            promise.join_handle =
+                Some(tokio::task::spawn(async move { sender.send(future.await) }));
         }
 
         #[cfg(feature = "web")]
@@ -145,8 +156,10 @@ impl<T: Send + 'static> Promise<T> {
     where
         F: FnOnce() -> T + Send + 'static,
     {
-        let (sender, promise) = Self::new();
-        tokio::task::spawn(async move { sender.send(tokio::task::block_in_place(f)) });
+        let (sender, mut promise) = Self::new();
+        promise.join_handle = Some(tokio::task::spawn(async move {
+            sender.send(tokio::task::block_in_place(f));
+        }));
         promise
     }
 
@@ -201,7 +214,12 @@ impl<T: Send + 'static> Promise<T> {
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn try_take(self) -> Result<T, Self> {
-        self.data.try_take().map_err(|data| Self { data })
+        self.data.try_take().map_err(|data| Self {
+            data,
+
+            #[cfg(feature = "tokio")]
+            join_handle: self.join_handle,
+        })
     }
 
     /// Block execution until ready, then returns a reference to the value.
@@ -243,6 +261,14 @@ impl<T: Send + 'static> Promise<T> {
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn poll_mut(&mut self) -> std::task::Poll<&mut T> {
         self.data.poll_mut()
+    }
+
+    /// Abort the running task spawned by [`Self::spawn_async`].
+    #[cfg(feature = "tokio")]
+    pub fn abort(self) {
+        if let Some(join_handle) = self.join_handle {
+            join_handle.abort();
+        }
     }
 }
 

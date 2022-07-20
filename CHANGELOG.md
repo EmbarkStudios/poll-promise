@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `web` feature to enable `Promise::spawn_async` using [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
+- Add `Promise::abort` to abort the associated async task, if any.
 
 
 ## [0.1.0] - 2022-01-10
