@@ -46,6 +46,9 @@ impl<T> Sender<T> {
 #[must_use]
 pub struct Promise<T: Send + 'static> {
     data: PromiseImpl<T>,
+
+    #[cfg(feature = "tokio")]
+    join_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[cfg(all(feature = "tokio", feature = "web"))]
@@ -71,6 +74,9 @@ impl<T: Send + 'static> Promise<T> {
             Sender(tx),
             Self {
                 data: PromiseImpl::Pending(rx),
+
+                #[cfg(feature = "tokio")]
+                join_handle: None,
             },
         )
     }
@@ -79,6 +85,9 @@ impl<T: Send + 'static> Promise<T> {
     pub fn from_ready(value: T) -> Self {
         Self {
             data: PromiseImpl::Ready(value),
+
+            #[cfg(feature = "tokio")]
+            join_handle: None,
         }
     }
 
@@ -112,19 +121,20 @@ impl<T: Send + 'static> Promise<T> {
         #[cfg(feature = "tokio")] future: impl std::future::Future<Output = T> + 'static + Send,
         #[cfg(feature = "web")] future: impl std::future::Future<Output = T> + 'static,
     ) -> Self {
-        let (sender, promise) = Self::new();
-
         #[cfg(feature = "tokio")]
         {
-            tokio::task::spawn(async move { sender.send(future.await) });
+            let (sender, mut promise) = Self::new();
+            promise.join_handle =
+                Some(tokio::task::spawn(async move { sender.send(future.await) }));
+            promise
         }
 
         #[cfg(feature = "web")]
         {
+            let (sender, promise) = Self::new();
             wasm_bindgen_futures::spawn_local(async move { sender.send(future.await) });
+            promise
         }
-
-        promise
     }
 
     /// Spawn a blocking closure in a background task.
@@ -148,8 +158,10 @@ impl<T: Send + 'static> Promise<T> {
     where
         F: FnOnce() -> T + Send + 'static,
     {
-        let (sender, promise) = Self::new();
-        tokio::task::spawn(async move { sender.send(tokio::task::block_in_place(f)) });
+        let (sender, mut promise) = Self::new();
+        promise.join_handle = Some(tokio::task::spawn(async move {
+            sender.send(tokio::task::block_in_place(f));
+        }));
         promise
     }
 
@@ -204,7 +216,12 @@ impl<T: Send + 'static> Promise<T> {
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn try_take(self) -> Result<T, Self> {
-        self.data.try_take().map_err(|data| Self { data })
+        self.data.try_take().map_err(|data| Self {
+            data,
+
+            #[cfg(feature = "tokio")]
+            join_handle: self.join_handle,
+        })
     }
 
     /// Block execution until ready, then returns a reference to the value.
@@ -246,6 +263,14 @@ impl<T: Send + 'static> Promise<T> {
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn poll_mut(&mut self) -> std::task::Poll<&mut T> {
         self.data.poll_mut()
+    }
+
+    /// Abort the running task spawned by [`Self::spawn_async`].
+    #[cfg(feature = "tokio")]
+    pub fn abort(self) {
+        if let Some(join_handle) = self.join_handle {
+            join_handle.abort();
+        }
     }
 }
 
