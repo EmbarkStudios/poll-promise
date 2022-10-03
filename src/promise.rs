@@ -121,20 +121,20 @@ impl<T: Send + 'static> Promise<T> {
         #[cfg(feature = "tokio")] future: impl std::future::Future<Output = T> + 'static + Send,
         #[cfg(feature = "web")] future: impl std::future::Future<Output = T> + 'static,
     ) -> Self {
-        let (sender, mut promise) = Self::new();
-
         #[cfg(feature = "tokio")]
         {
+            let (sender, mut promise) = Self::new();
             promise.join_handle =
                 Some(tokio::task::spawn(async move { sender.send(future.await) }));
+            promise
         }
 
         #[cfg(feature = "web")]
         {
+            let (sender, promise) = Self::new();
             wasm_bindgen_futures::spawn_local(async move { sender.send(future.await) });
+            promise
         }
-
-        promise
     }
 
     /// Spawn a blocking closure in a background task.
