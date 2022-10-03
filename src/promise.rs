@@ -48,6 +48,9 @@ pub struct Promise<T: Send + 'static> {
     data: PromiseImpl<T>,
 }
 
+#[cfg(all(feature = "tokio", feature = "web"))]
+compile_error!("You cannot specify both the 'tokio' and 'web' feature");
+
 // Ensure that Promise is !Sync, confirming the safety of the unsafe code.
 static_assertions::assert_not_impl_all!(Promise<u32>: Sync);
 static_assertions::assert_impl_all!(Promise<u32>: Send);
@@ -105,11 +108,11 @@ impl<T: Send + 'static> Promise<T> {
     /// let promise = Promise::spawn_async(async move { something_async().await });
     /// ```
     #[cfg(any(feature = "tokio", feature = "web"))]
-    pub fn spawn_async(future: impl std::future::Future<Output = T> + 'static + Send) -> Self {
+    pub fn spawn_async(
+        #[cfg(feature = "tokio")] future: impl std::future::Future<Output = T> + 'static + Send,
+        #[cfg(feature = "web")] future: impl std::future::Future<Output = T> + 'static,
+    ) -> Self {
         let (sender, promise) = Self::new();
-
-        #[cfg(all(feature = "tokio", feature = "web"))]
-        compile_error!("You cannot specify both the 'tokio' and 'web' feature");
 
         #[cfg(feature = "tokio")]
         {
