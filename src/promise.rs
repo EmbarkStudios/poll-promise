@@ -121,7 +121,7 @@ impl<T: Send + 'static> Promise<T> {
         #[cfg(feature = "tokio")] future: impl std::future::Future<Output = T> + 'static + Send,
         #[cfg(feature = "web")] future: impl std::future::Future<Output = T> + 'static,
     ) -> Self {
-        let (sender, promise) = Self::new();
+        let (sender, mut promise) = Self::new();
 
         #[cfg(feature = "tokio")]
         {
