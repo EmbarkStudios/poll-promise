@@ -25,11 +25,11 @@
 //! when compiled with the following features:
 //!
 //! ### `tokio`
-//! If you enable the `tokio` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_blocking`]
+//! If you enable the `tokio` feature you can use [`Promise::spawn_async`], [`Promise::spawn_local`] and [`Promise::spawn_blocking`]
 //! which will spawn tasks in the surrounding tokio runtime.
 //!
 //! ### `web`
-//! If you enable the `web` feature you can use [`Promise::spawn_async`] which will spawn tasks using
+//! If you enable the `web` feature you can use [`Promise::spawn_local`] which will spawn tasks using
 //! [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
 
 // BEGIN - Embark standard lints v6 for Rust 1.55+

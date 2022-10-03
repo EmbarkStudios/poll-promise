@@ -42,7 +42,7 @@ impl<T> Sender<T> {
 /// ```
 ///
 /// If you enable the `tokio` feature you can use `poll-promise` with the [tokio](https://github.com/tokio-rs/tokio)
-/// runtime to run `async` tasks using [`Promise::spawn_async`] and [`Promise::spawn_blocking`].
+/// runtime to run `async` tasks using [`Promise::spawn_async`], [`Promise::spawn_local`], and [`Promise::spawn_blocking`].
 #[must_use]
 pub struct Promise<T: Send + 'static> {
     data: PromiseImpl<T>,
@@ -65,7 +65,7 @@ impl<T: Send + 'static> Promise<T> {
     /// If you drop the `Sender` without putting a value into it,
     /// it will cause a panic when polling the `Promise`.
     ///
-    /// See also [`Self::spawn_blocking`], [`Self::spawn_async`] and [`Self::spawn_thread`].
+    /// See also [`Self::spawn_blocking`], [`Self::spawn_async`], [`Self::spawn_local`], and [`Self::spawn_thread`].
     pub fn new() -> (Sender<T>, Self) {
         // We need a channel that we can wait blocking on (for `Self::block_until_ready`).
         // (`tokio::sync::oneshot` does not support blocking receive).
@@ -91,9 +91,11 @@ impl<T: Send + 'static> Promise<T> {
         }
     }
 
-    /// Spawn a future.
+    /// Spawn a future. Runs the task concurrently.
+    /// 
+    /// See [`Self::spawn_local`].
     ///
-    /// You need to compile `poll-promise` with either the "tokio" or "web" feature for this to be available.
+    /// You need to compile `poll-promise` with the "tokio" feature for this to be available.
     ///
     /// ## tokio
     /// This should be used for spawning asynchronous work that does _not_ do any heavy CPU computations
@@ -116,25 +118,47 @@ impl<T: Send + 'static> Promise<T> {
     /// # use poll_promise::Promise;
     /// let promise = Promise::spawn_async(async move { something_async().await });
     /// ```
+    #[cfg(feature = "tokio")]
+    pub fn spawn_async(future: impl std::future::Future<Output = T> + 'static + Send) -> Self {
+        let (sender, mut promise) = Self::new();
+
+        promise.join_handle = Some(tokio::task::spawn(async move { sender.send(future.await) }));
+
+        promise
+    }
+
+    /// Spawn a future. Runs it in the local thread.
+    ///
+    /// You need to compile `poll-promise` with either the "tokio" or "web" feature for this to be available.
+    ///
+    /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn_local`].
+    /// Unlike [`Self::spawn_async`] this method does not require [`Send`].
+    ///
+    /// ## Example
+    /// ``` no_run
+    /// # async fn something_async() {}
+    /// # use poll_promise::Promise;
+    /// let promise = Promise::spawn_local(async move { something_async().await });
+    /// ```
     #[cfg(any(feature = "tokio", feature = "web"))]
-    pub fn spawn_async(
-        #[cfg(feature = "tokio")] future: impl std::future::Future<Output = T> + 'static + Send,
-        #[cfg(feature = "web")] future: impl std::future::Future<Output = T> + 'static,
-    ) -> Self {
+    pub fn spawn_local(future: impl std::future::Future<Output = T> + 'static) -> Self {
+        // When using the web feature we don't mutate promise.
+        #[allow(unused_mut)]
+        let (sender, mut promise) = Self::new();
+
         #[cfg(feature = "tokio")]
         {
-            let (sender, mut promise) = Self::new();
-            promise.join_handle =
-                Some(tokio::task::spawn(async move { sender.send(future.await) }));
-            promise
+            promise.join_handle = Some(tokio::task::spawn_local(async move {
+                sender.send(future.await)
+            }));
         }
 
         #[cfg(feature = "web")]
         {
-            let (sender, promise) = Self::new();
             wasm_bindgen_futures::spawn_local(async move { sender.send(future.await) });
-            promise
         }
+
+        promise
     }
 
     /// Spawn a blocking closure in a background task.
