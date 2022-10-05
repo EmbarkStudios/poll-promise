@@ -31,6 +31,13 @@
 //! ### `web`
 //! If you enable the `web` feature you can use [`Promise::spawn_local`] which will spawn tasks using
 //! [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
+//! 
+//! ### `smol`
+//! If you enable the `smol` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_local`]
+//! which will spawn tasks using the smol executor. Remember to tick the smol executor with [`tick`] and [`tick_local`].
+//! 
+//! ### tick-poll
+//! Enabling the `tick-poll` with `smol` calling [`Promise::poll`] will automatically tick the smol executor.
 
 // BEGIN - Embark standard lints v6 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section
@@ -116,3 +123,152 @@
 mod promise;
 
 pub use promise::{Promise, Sender};
+
+#[cfg(feature = "smol")]
+static EXECUTOR: smol::Executor<'static> = smol::Executor::new();
+#[cfg(feature = "smol")]
+thread_local! {
+    static LOCAL_EXECUTOR: smol::LocalExecutor<'static> = smol::LocalExecutor::new();
+}
+
+/// 'Tick' the smol thread executor.
+///
+/// Poll promise will call this for you when using [`Promise::block_until_ready`] and friends.
+/// If so desired [`Promise::poll`] will run this for you with the `tick-poll` feature.
+#[cfg(feature = "smol")]
+pub fn tick() -> bool {
+    crate::EXECUTOR.try_tick()
+}
+
+/// 'Tick' the smol local thread executor.
+///
+/// Poll promise will call this for you when using [`Promise::block_until_ready`] and friends.
+/// If so desired [`Promise::poll`] will run this for you with the `tick-poll` feature.
+#[cfg(feature = "smol")]
+pub fn tick_local() -> bool {
+    crate::LOCAL_EXECUTOR.with(|exec| exec.try_tick())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::Promise;
+
+    #[test]
+    fn it_spawns_threads() {
+        let promise = Promise::spawn_thread("test", || {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            0
+        });
+
+        assert_eq!(0, promise.block_and_take());
+    }
+
+    #[test]
+    #[cfg(any(feature = "smol", feature = "tokio"))]
+    fn it_runs_async_threaded() {
+        #[cfg(feature = "tokio")]
+        {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                let promise = Promise::spawn_async(async move { 0 });
+
+                assert_eq!(0, promise.block_and_take());
+            })
+        }
+
+        #[cfg(feature = "smol")]
+        {
+            let promise = Promise::spawn_async(async move { 0 });
+
+            assert_eq!(0, promise.block_and_take());
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "smol")]
+    fn it_runs_locally() {
+        let promise = Promise::spawn_local(async move { 0 });
+
+        assert_eq!(0, promise.block_and_take());
+    }
+
+    #[test]
+    #[cfg(feature = "smol")]
+    fn it_runs_background() {
+        let promise = Promise::spawn_async(async move {
+            let mut e = 0;
+            for i in -10000..0 {
+                e += i;
+            }
+            e
+        });
+        crate::tick();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        assert!(promise.ready().is_some(), "was not finished");
+    }
+
+    #[test]
+    #[cfg(feature = "smol")]
+    fn it_can_block() {
+        let promise = Promise::spawn_local(async move {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        });
+        crate::tick_local();
+
+        assert!(promise.ready().is_some(), "was not finished");
+    }
+
+    #[test]
+    #[cfg(feature = "smol")]
+    fn it_can_run_async_functions() {
+        let promise = Promise::spawn_async(async move { something_async().await });
+        crate::tick();
+
+        assert!(promise.ready().is_none(), "should not be finished yet");
+
+        assert!(promise.block_and_take(), "example.com is ipv4");
+    }
+
+    #[test]
+    #[cfg(feature = "smol")]
+    fn it_can_run_async_functions_locally() {
+        let promise = Promise::spawn_local(async move { something_async().await });
+        crate::tick_local();
+
+        assert!(promise.ready().is_none(), "should not be finished yet");
+
+        assert!(promise.block_and_take(), "example.com is ipv4");
+    }
+
+    #[test]
+    #[cfg(all(feature = "smol", not(feature = "tick-poll")))]
+    fn it_needs_to_be_ticked() {
+        let promise = Promise::spawn_async(async move { something_async().await });
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        assert!(promise.ready().is_none(), "should not be running");
+
+        crate::tick();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        assert!(promise.ready().is_some(), "should be finished");
+    }
+
+    #[test]
+    #[cfg(all(feature = "smol", feature = "tick-poll"))]
+    fn it_does_not_need_to_be_ticked() {
+        let promise = Promise::spawn_async(async move { something_async().await });
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        assert!(promise.ready().is_some(), "should be finished");
+    }
+
+    #[cfg(feature = "smol")]
+    async fn something_async() -> bool {
+        smol::net::resolve("example.com:80").await.unwrap()[0].is_ipv4()
+    }
+}

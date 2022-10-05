@@ -16,6 +16,14 @@ impl<T> Sender<T> {
     }
 }
 
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+enum TaskType {
+    Local,
+    Async,
+    None,
+}
+
 // ----------------------------------------------------------------------------
 
 /// A promise that waits for the reception of a single value,
@@ -46,9 +54,13 @@ impl<T> Sender<T> {
 #[must_use]
 pub struct Promise<T: Send + 'static> {
     data: PromiseImpl<T>,
+    task_type: TaskType,
 
     #[cfg(feature = "tokio")]
     join_handle: Option<tokio::task::JoinHandle<()>>,
+
+    #[cfg(feature = "smol")]
+    task: Option<smol::Task<()>>,
 }
 
 #[cfg(all(feature = "tokio", feature = "web"))]
@@ -74,9 +86,13 @@ impl<T: Send + 'static> Promise<T> {
             Sender(tx),
             Self {
                 data: PromiseImpl::Pending(rx),
+                task_type: TaskType::None,
 
                 #[cfg(feature = "tokio")]
                 join_handle: None,
+
+                #[cfg(feature = "smol")]
+                task: None,
             },
         )
     }
@@ -85,14 +101,18 @@ impl<T: Send + 'static> Promise<T> {
     pub fn from_ready(value: T) -> Self {
         Self {
             data: PromiseImpl::Ready(value),
+            task_type: TaskType::None,
 
             #[cfg(feature = "tokio")]
             join_handle: None,
+
+            #[cfg(feature = "smol")]
+            task: None,
         }
     }
 
     /// Spawn a future. Runs the task concurrently.
-    /// 
+    ///
     /// See [`Self::spawn_local`].
     ///
     /// You need to compile `poll-promise` with the "tokio" feature for this to be available.
@@ -118,21 +138,32 @@ impl<T: Send + 'static> Promise<T> {
     /// # use poll_promise::Promise;
     /// let promise = Promise::spawn_async(async move { something_async().await });
     /// ```
-    #[cfg(feature = "tokio")]
+    #[cfg(any(feature = "tokio", feature = "smol"))]
     pub fn spawn_async(future: impl std::future::Future<Output = T> + 'static + Send) -> Self {
         let (sender, mut promise) = Self::new();
+        promise.task_type = TaskType::Async;
 
-        promise.join_handle = Some(tokio::task::spawn(async move { sender.send(future.await) }));
+        #[cfg(feature = "tokio")]
+        {
+            promise.join_handle =
+                Some(tokio::task::spawn(async move { sender.send(future.await) }));
+        }
+
+        #[cfg(feature = "smol")]
+        {
+            promise.task = Some(crate::EXECUTOR.spawn(async move { sender.send(future.await) }));
+        }
 
         promise
     }
 
     /// Spawn a future. Runs it in the local thread.
     ///
-    /// You need to compile `poll-promise` with either the "tokio" or "web" feature for this to be available.
+    /// You need to compile `poll-promise` with either the "tokio", "smol", or "web" feature for this to be available.
     ///
     /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn_local`].
     /// Unlike [`Self::spawn_async`] this method does not require [`Send`].
+    /// However, you will have to set up [`tokio::task::LocalSet`]s yourself.
     ///
     /// ## Example
     /// ``` no_run
@@ -140,12 +171,15 @@ impl<T: Send + 'static> Promise<T> {
     /// # use poll_promise::Promise;
     /// let promise = Promise::spawn_local(async move { something_async().await });
     /// ```
-    #[cfg(any(feature = "tokio", feature = "web"))]
+    #[cfg(any(feature = "tokio", feature = "web", feature = "smol"))]
     pub fn spawn_local(future: impl std::future::Future<Output = T> + 'static) -> Self {
         // When using the web feature we don't mutate promise.
         #[allow(unused_mut)]
         let (sender, mut promise) = Self::new();
+        promise.task_type = TaskType::Local;
 
+        // This *generally* works but not super well.
+        // Tokio doesn't do any fancy local scheduling.
         #[cfg(feature = "tokio")]
         {
             promise.join_handle = Some(tokio::task::spawn_local(async move {
@@ -156,6 +190,14 @@ impl<T: Send + 'static> Promise<T> {
         #[cfg(feature = "web")]
         {
             wasm_bindgen_futures::spawn_local(async move { sender.send(future.await) });
+        }
+
+        #[cfg(feature = "smol")]
+        {
+            promise.task = Some(
+                crate::LOCAL_EXECUTOR
+                    .with(|exec| exec.spawn(async move { sender.send(future.await) })),
+            );
         }
 
         promise
@@ -242,9 +284,13 @@ impl<T: Send + 'static> Promise<T> {
     pub fn try_take(self) -> Result<T, Self> {
         self.data.try_take().map_err(|data| Self {
             data,
+            task_type: self.task_type,
 
             #[cfg(feature = "tokio")]
             join_handle: self.join_handle,
+
+            #[cfg(feature = "smol")]
+            task: self.task,
         })
     }
 
@@ -252,21 +298,21 @@ impl<T: Send + 'static> Promise<T> {
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn block_until_ready(&self) -> &T {
-        self.data.block_until_ready()
+        self.data.block_until_ready(self.task_type)
     }
 
     /// Block execution until ready, then returns a mutable reference to the value.
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn block_until_ready_mut(&mut self) -> &mut T {
-        self.data.block_until_ready_mut()
+        self.data.block_until_ready_mut(self.task_type)
     }
 
     /// Block execution until ready, then returns the promised value and consumes the `Promise`.
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn block_and_take(self) -> T {
-        self.data.block_until_ready();
+        self.data.block_until_ready(self.task_type);
         match self.data {
             PromiseImpl::Pending(_) => unreachable!(),
             PromiseImpl::Ready(value) => value,
@@ -278,7 +324,7 @@ impl<T: Send + 'static> Promise<T> {
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn poll(&self) -> std::task::Poll<&T> {
-        self.data.poll()
+        self.data.poll(self.task_type)
     }
 
     /// Returns either a mut reference to the ready value in a [`std::task::Poll::Ready`]
@@ -286,7 +332,7 @@ impl<T: Send + 'static> Promise<T> {
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn poll_mut(&mut self) -> std::task::Poll<&mut T> {
-        self.data.poll_mut()
+        self.data.poll_mut(self.task_type)
     }
 
     /// Abort the running task spawned by [`Self::spawn_async`].
@@ -306,9 +352,12 @@ enum PromiseImpl<T: Send + 'static> {
 }
 
 impl<T: Send + 'static> PromiseImpl<T> {
-    fn poll_mut(&mut self) -> std::task::Poll<&mut T> {
+    #[allow(unused_variables)]
+    fn poll_mut(&mut self, task_type: TaskType) -> std::task::Poll<&mut T> {
         match self {
             Self::Pending(rx) => {
+                #[cfg(all(feature = "smol", feature = "tick-poll"))]
+                Self::tick(task_type);
                 if let Ok(value) = rx.try_recv() {
                     *self = Self::Ready(value);
                     match self {
@@ -338,9 +387,12 @@ impl<T: Send + 'static> PromiseImpl<T> {
     }
 
     #[allow(unsafe_code)]
-    fn poll(&self) -> std::task::Poll<&T> {
+    #[allow(unused_variables)]
+    fn poll(&self, task_type: TaskType) -> std::task::Poll<&T> {
         match self {
             Self::Pending(rx) => {
+                #[cfg(all(feature = "smol", feature = "tick-poll"))]
+                Self::tick(task_type);
                 match rx.try_recv() {
                     Ok(value) => {
                         // SAFETY: This is safe since Promise (and PromiseData) are !Sync and thus
@@ -366,39 +418,44 @@ impl<T: Send + 'static> PromiseImpl<T> {
         }
     }
 
-    fn block_until_ready_mut(&mut self) -> &mut T {
+    fn block_until_ready_mut(&mut self, task_type: TaskType) -> &mut T {
+        // Constantly poll until we're ready.
+        while self.poll(task_type).is_pending() {
+            // Tick unless poll does it for us.
+            #[cfg(all(feature = "smol", not(feature = "tick-poll")))]
+            Self::tick(task_type);
+        }
         match self {
-            Self::Pending(rx) => {
-                let value = rx.recv().expect("The Promise Sender was dropped");
-                *self = Self::Ready(value);
-                match self {
-                    Self::Ready(ref mut value) => value,
-                    Self::Pending(_) => unreachable!(),
-                }
-            }
             Self::Ready(ref mut value) => value,
+            Self::Pending(_) => unreachable!(), // Never should happen. We cannot go backwards from being ready.
         }
     }
 
     #[allow(unsafe_code)]
-    fn block_until_ready(&self) -> &T {
-        match self {
-            Self::Pending(rx) => {
-                let value = rx.recv().expect("The Promise Sender was dropped");
-                // SAFETY: This is safe since `Promise` (and `PromiseData`) are `!Sync` and thus
-                // need external synchronization anyway. We can only transition from
-                // Pending->Ready, not the other way around, so once we're Ready we'll
-                // stay ready.
-                unsafe {
-                    let myself = self as *const Self as *mut Self;
-                    *myself = Self::Ready(value);
-                }
-                match self {
-                    Self::Ready(ref value) => value,
-                    Self::Pending(_) => unreachable!(),
-                }
-            }
-            Self::Ready(ref value) => value,
+    #[allow(unused_variables)]
+    fn block_until_ready(&self, task_type: TaskType) -> &T {
+        // Constantly poll until we're ready.
+        while self.poll(task_type).is_pending() {
+            // Tick unless poll does it for us.
+            #[cfg(all(feature = "smol", not(feature = "tick-poll")))]
+            Self::tick(task_type);
         }
+        match self {
+            Self::Ready(ref value) => value,
+            Self::Pending(_) => unreachable!(), // Never should happen. We cannot go backwards from being ready.
+        }
+    }
+
+    #[cfg(feature = "smol")]
+    fn tick(task_type: TaskType) {
+        match task_type {
+            TaskType::Local => {
+                crate::tick_local();
+            }
+            TaskType::Async => {
+                crate::tick();
+            }
+            TaskType::None => (),
+        };
     }
 }
