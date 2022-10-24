@@ -38,6 +38,7 @@ allow = [
     "BSD-2-Clause",                   # https://tldrlegal.com/license/bsd-2-clause-license-(freebsd)
     "BSD-3-Clause",                   # https://tldrlegal.com/license/bsd-3-clause-license-(revised)
     "MIT",                            # https://tldrlegal.com/license/mit-license
+    "Unicode-DFS-2016",               # https://spdx.org/licenses/Unicode-DFS-2016.html
     "Zlib",                           # https://tldrlegal.com/license/zlib-libpng-license-(zlib)
     "ISC",                            # https://tldrlegal.com/license/-isc-license
 ]

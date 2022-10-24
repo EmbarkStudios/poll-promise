@@ -32,7 +32,7 @@
 //! If you enable the `web` feature you can use [`Promise::spawn_async`] which will spawn tasks using
 //! [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
 
-// BEGIN - Embark standard lints v5 for Rust 1.55+
+// BEGIN - Embark standard lints v6 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section
 // for more info see: <https://github.com/EmbarkStudios/rust-ecosystem/issues/59>
 #![deny(unsafe_code)]
@@ -43,8 +43,6 @@
     clippy::checked_conversions,
     clippy::dbg_macro,
     clippy::debug_assert_with_mut_call,
-    clippy::disallowed_method,
-    clippy::disallowed_type,
     clippy::doc_markdown,
     clippy::empty_enum,
     clippy::enum_glob_use,
@@ -111,7 +109,7 @@
     nonstandard_style,
     rust_2018_idioms
 )]
-// END - Embark standard lints v0.5 for Rust 1.55+
+// END - Embark standard lints v6 for Rust 1.55+
 // crate-specific exceptions:
 #![deny(missing_docs, rustdoc::missing_crate_level_docs)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
