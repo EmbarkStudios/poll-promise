@@ -53,7 +53,7 @@ jobs:
       - name: cargo test smol
         run: cargo test --release -F smol -F tick-poll
       - name: cargo test tokio
-        run cargo test --release -F tokio
+        run: cargo test --release -F tokio
 
   # TODO: Remove this check if you don't use cargo-deny in the repo
   deny-check:
