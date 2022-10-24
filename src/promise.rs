@@ -16,11 +16,15 @@ impl<T> Sender<T> {
     }
 }
 
+/// The type of a running task.
 #[derive(Clone, Copy)]
 #[allow(dead_code)]
-enum TaskType {
+pub enum TaskType {
+    /// This task is running in the local thread.
     Local,
+    /// This task is running async in another thread.
     Async,
+    /// This task is running in a different manner.
     None,
 }
 
@@ -60,7 +64,7 @@ pub struct Promise<T: Send + 'static> {
     join_handle: Option<tokio::task::JoinHandle<()>>,
 
     #[cfg(feature = "smol")]
-    task: Option<smol::Task<()>>,
+    smol_task: Option<smol::Task<()>>,
 }
 
 #[cfg(all(feature = "tokio", feature = "web"))]
@@ -92,7 +96,7 @@ impl<T: Send + 'static> Promise<T> {
                 join_handle: None,
 
                 #[cfg(feature = "smol")]
-                task: None,
+                smol_task: None,
             },
         )
     }
@@ -107,7 +111,7 @@ impl<T: Send + 'static> Promise<T> {
             join_handle: None,
 
             #[cfg(feature = "smol")]
-            task: None,
+            smol_task: None,
         }
     }
 
@@ -151,7 +155,8 @@ impl<T: Send + 'static> Promise<T> {
 
         #[cfg(feature = "smol")]
         {
-            promise.task = Some(crate::EXECUTOR.spawn(async move { sender.send(future.await) }));
+            promise.smol_task =
+                Some(crate::EXECUTOR.spawn(async move { sender.send(future.await) }));
         }
 
         promise
@@ -194,7 +199,7 @@ impl<T: Send + 'static> Promise<T> {
 
         #[cfg(feature = "smol")]
         {
-            promise.task = Some(
+            promise.smol_task = Some(
                 crate::LOCAL_EXECUTOR
                     .with(|exec| exec.spawn(async move { sender.send(future.await) })),
             );
@@ -290,7 +295,7 @@ impl<T: Send + 'static> Promise<T> {
             join_handle: self.join_handle,
 
             #[cfg(feature = "smol")]
-            task: self.task,
+            smol_task: self.smol_task,
         })
     }
 
@@ -333,6 +338,12 @@ impl<T: Send + 'static> Promise<T> {
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn poll_mut(&mut self) -> std::task::Poll<&mut T> {
         self.data.poll_mut(self.task_type)
+    }
+
+    /// Returns the type of task this promise is running.
+    /// See [`TaskType`].
+    pub fn task_type(&self) -> TaskType {
+        self.task_type
     }
 
     /// Abort the running task spawned by [`Self::spawn_async`].
@@ -418,16 +429,25 @@ impl<T: Send + 'static> PromiseImpl<T> {
         }
     }
 
+    #[allow(unused_variables)]
     fn block_until_ready_mut(&mut self, task_type: TaskType) -> &mut T {
         // Constantly poll until we're ready.
+        #[cfg(feature = "smol")]
         while self.poll(task_type).is_pending() {
             // Tick unless poll does it for us.
-            #[cfg(all(feature = "smol", not(feature = "tick-poll")))]
+            #[cfg(not(feature = "tick-poll"))]
             Self::tick(task_type);
         }
         match self {
+            Self::Pending(rx) => {
+                let value = rx.recv().expect("The Promise Sender was dropped");
+                *self = Self::Ready(value);
+                match self {
+                    Self::Ready(ref mut value) => value,
+                    Self::Pending(_) => unreachable!(),
+                }
+            }
             Self::Ready(ref mut value) => value,
-            Self::Pending(_) => unreachable!(), // Never should happen. We cannot go backwards from being ready.
         }
     }
 
@@ -435,14 +455,29 @@ impl<T: Send + 'static> PromiseImpl<T> {
     #[allow(unused_variables)]
     fn block_until_ready(&self, task_type: TaskType) -> &T {
         // Constantly poll until we're ready.
+        #[cfg(feature = "smol")]
         while self.poll(task_type).is_pending() {
             // Tick unless poll does it for us.
-            #[cfg(all(feature = "smol", not(feature = "tick-poll")))]
+            #[cfg(not(feature = "tick-poll"))]
             Self::tick(task_type);
         }
         match self {
+            Self::Pending(rx) => {
+                let value = rx.recv().expect("The Promise Sender was dropped");
+                // SAFETY: This is safe since `Promise` (and `PromiseData`) are `!Sync` and thus
+                // need external synchronization anyway. We can only transition from
+                // Pending->Ready, not the other way around, so once we're Ready we'll
+                // stay ready.
+                unsafe {
+                    let myself = self as *const Self as *mut Self;
+                    *myself = Self::Ready(value);
+                }
+                match self {
+                    Self::Ready(ref value) => value,
+                    Self::Pending(_) => unreachable!(),
+                }
+            }
             Self::Ready(ref value) => value,
-            Self::Pending(_) => unreachable!(), // Never should happen. We cannot go backwards from being ready.
         }
     }
 

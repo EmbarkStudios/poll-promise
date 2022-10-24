@@ -31,11 +31,11 @@
 //! ### `web`
 //! If you enable the `web` feature you can use [`Promise::spawn_local`] which will spawn tasks using
 //! [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
-//! 
+//!
 //! ### `smol`
 //! If you enable the `smol` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_local`]
 //! which will spawn tasks using the smol executor. Remember to tick the smol executor with [`tick`] and [`tick_local`].
-//! 
+//!
 //! ### tick-poll
 //! Enabling the `tick-poll` with `smol` calling [`Promise::poll`] will automatically tick the smol executor.
 
@@ -122,7 +122,7 @@
 
 mod promise;
 
-pub use promise::{Promise, Sender};
+pub use promise::{Promise, Sender, TaskType};
 
 #[cfg(feature = "smol")]
 static EXECUTOR: smol::Executor<'static> = smol::Executor::new();
@@ -208,6 +208,21 @@ mod test {
         assert!(promise.ready().is_some(), "was not finished");
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(feature = "tokio")]
+    async fn it_runs_background() {
+        let promise = Promise::spawn_async(async move {
+            let mut e = 0;
+            for i in -10000..0 {
+                e += i;
+            }
+            e
+        });
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        assert!(promise.ready().is_some(), "was not finished");
+    }
+
     #[test]
     #[cfg(feature = "smol")]
     fn it_can_block() {
@@ -224,6 +239,15 @@ mod test {
     fn it_can_run_async_functions() {
         let promise = Promise::spawn_async(async move { something_async().await });
         crate::tick();
+
+        assert!(promise.ready().is_none(), "should not be finished yet");
+
+        assert!(promise.block_and_take(), "example.com is ipv4");
+    }
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(feature = "tokio")]
+    async fn it_can_run_async_functions() {
+        let promise = Promise::spawn_async(async move { something_async().await });
 
         assert!(promise.ready().is_none(), "should not be finished yet");
 
@@ -246,7 +270,7 @@ mod test {
     fn it_needs_to_be_ticked() {
         let promise = Promise::spawn_async(async move { something_async().await });
 
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_secs_f32(0.5));
 
         assert!(promise.ready().is_none(), "should not be running");
 
@@ -267,8 +291,8 @@ mod test {
         assert!(promise.ready().is_some(), "should be finished");
     }
 
-    #[cfg(feature = "smol")]
+    #[cfg(any(feature = "smol", feature = "tokio"))]
     async fn something_async() -> bool {
-        smol::net::resolve("example.com:80").await.unwrap()[0].is_ipv4()
+        async_net::resolve("example.com:80").await.unwrap()[0].is_ipv4()
     }
 }
