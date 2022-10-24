@@ -188,7 +188,7 @@ impl<T: Send + 'static> Promise<T> {
         #[cfg(feature = "tokio")]
         {
             promise.join_handle = Some(tokio::task::spawn_local(async move {
-                sender.send(future.await)
+                sender.send(future.await);
             }));
         }
 

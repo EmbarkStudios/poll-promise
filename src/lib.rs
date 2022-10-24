@@ -164,24 +164,19 @@ mod test {
     }
 
     #[test]
-    #[cfg(any(feature = "smol", feature = "tokio"))]
+    #[cfg(feature = "smol")]
     fn it_runs_async_threaded() {
-        #[cfg(feature = "tokio")]
-        {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                let promise = Promise::spawn_async(async move { 0 });
+        let promise = Promise::spawn_async(async move { 0 });
 
-                assert_eq!(0, promise.block_and_take());
-            })
-        }
+        assert_eq!(0, promise.block_and_take());
+    }
 
-        #[cfg(feature = "smol")]
-        {
-            let promise = Promise::spawn_async(async move { 0 });
+    #[tokio::test(flavor = "multi_thread")]
+    #[cfg(feature = "tokio")]
+    async fn it_runs_async_threaded() {
+        let promise = Promise::spawn_async(async move { 0 });
 
-            assert_eq!(0, promise.block_and_take());
-        }
+        assert_eq!(0, promise.block_and_take());
     }
 
     #[test]
@@ -240,16 +235,12 @@ mod test {
         let promise = Promise::spawn_async(async move { something_async().await });
         crate::tick();
 
-        assert!(promise.ready().is_none(), "should not be finished yet");
-
         assert!(promise.block_and_take(), "example.com is ipv4");
     }
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "tokio")]
     async fn it_can_run_async_functions() {
         let promise = Promise::spawn_async(async move { something_async().await });
-
-        assert!(promise.ready().is_none(), "should not be finished yet");
 
         assert!(promise.block_and_take(), "example.com is ipv4");
     }
@@ -260,35 +251,7 @@ mod test {
         let promise = Promise::spawn_local(async move { something_async().await });
         crate::tick_local();
 
-        assert!(promise.ready().is_none(), "should not be finished yet");
-
         assert!(promise.block_and_take(), "example.com is ipv4");
-    }
-
-    #[test]
-    #[cfg(all(feature = "smol", not(feature = "tick-poll")))]
-    fn it_needs_to_be_ticked() {
-        let promise = Promise::spawn_async(async move { something_async().await });
-
-        std::thread::sleep(std::time::Duration::from_secs_f32(0.5));
-
-        assert!(promise.ready().is_none(), "should not be running");
-
-        crate::tick();
-
-        std::thread::sleep(std::time::Duration::from_secs(1));
-
-        assert!(promise.ready().is_some(), "should be finished");
-    }
-
-    #[test]
-    #[cfg(all(feature = "smol", feature = "tick-poll"))]
-    fn it_does_not_need_to_be_ticked() {
-        let promise = Promise::spawn_async(async move { something_async().await });
-
-        std::thread::sleep(std::time::Duration::from_secs(1));
-
-        assert!(promise.ready().is_some(), "should be finished");
     }
 
     #[cfg(any(feature = "smol", feature = "tokio"))]
