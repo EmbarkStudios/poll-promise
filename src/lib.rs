@@ -112,6 +112,7 @@
 // END - Embark standard lints v6 for Rust 1.55+
 // crate-specific exceptions:
 #![deny(missing_docs, rustdoc::missing_crate_level_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod promise;
 
