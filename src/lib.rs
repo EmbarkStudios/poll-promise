@@ -39,13 +39,13 @@
 //! ### `smol_tick_poll`
 //! Enabling the `smol_tick_poll` with `smol` calling [`Promise::poll`] will automatically tick the smol executor.
 //! This means you do not have to worry about calling [`tick`] but comes at the cost of loss of finer control over the executor.
-//! 
+//!
 //! Since calling [`tick_local`] will block the current thread, running multiple local promises at once with `smol_tick_poll` enabled
 //! may also cause stuttering.
-//! 
-//! poll-promise will automatically tick the smol executor with this feature disabled for you when using [`Promise::block_until_ready`] 
+//!
+//! poll-promise will automatically tick the smol executor with this feature disabled for you when using [`Promise::block_until_ready`]
 //! and friends, however.
-//! 
+//!
 
 // BEGIN - Embark standard lints v6 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section
