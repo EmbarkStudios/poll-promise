@@ -367,7 +367,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
     fn poll_mut(&mut self, task_type: TaskType) -> std::task::Poll<&mut T> {
         match self {
             Self::Pending(rx) => {
-                #[cfg(all(feature = "smol", feature = "tick-poll"))]
+                #[cfg(all(feature = "smol", feature = "smol_tick_poll"))]
                 Self::tick(task_type);
                 if let Ok(value) = rx.try_recv() {
                     *self = Self::Ready(value);
@@ -402,7 +402,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
     fn poll(&self, task_type: TaskType) -> std::task::Poll<&T> {
         match self {
             Self::Pending(rx) => {
-                #[cfg(all(feature = "smol", feature = "tick-poll"))]
+                #[cfg(all(feature = "smol", feature = "smol_tick_poll"))]
                 Self::tick(task_type);
                 match rx.try_recv() {
                     Ok(value) => {
@@ -435,7 +435,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
         #[cfg(feature = "smol")]
         while self.poll(task_type).is_pending() {
             // Tick unless poll does it for us.
-            #[cfg(not(feature = "tick-poll"))]
+            #[cfg(not(feature = "smol_tick_poll"))]
             Self::tick(task_type);
         }
         match self {
@@ -458,7 +458,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
         #[cfg(feature = "smol")]
         while self.poll(task_type).is_pending() {
             // Tick unless poll does it for us.
-            #[cfg(not(feature = "tick-poll"))]
+            #[cfg(not(feature = "smol_tick_poll"))]
             Self::tick(task_type);
         }
         match self {

@@ -36,4 +36,4 @@ async-net = "1.7.0"
 [features]
 # Allow spawning a task when running in a web browser.
 web = ["wasm-bindgen", "wasm-bindgen-futures"]
-tick-poll = []
+smol_tick_poll = []

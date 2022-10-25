@@ -36,8 +36,16 @@
 //! If you enable the `smol` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_local`]
 //! which will spawn tasks using the smol executor. Remember to tick the smol executor with [`tick`] and [`tick_local`].
 //!
-//! ### tick-poll
-//! Enabling the `tick-poll` with `smol` calling [`Promise::poll`] will automatically tick the smol executor.
+//! ### `smol_tick_poll`
+//! Enabling the `smol_tick_poll` with `smol` calling [`Promise::poll`] will automatically tick the smol executor.
+//! This means you do not have to worry about calling [`tick`] but comes at the cost of loss of finer control over the executor.
+//! 
+//! Since calling [`tick_local`] will block the current thread, running multiple local promises at once with `smol_tick_poll` enabled
+//! may also cause stuttering.
+//! 
+//! poll-promise will automatically tick the smol executor with this feature disabled for you when using [`Promise::block_until_ready`] 
+//! and friends, however.
+//! 
 
 // BEGIN - Embark standard lints v6 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section
@@ -134,7 +142,7 @@ thread_local! {
 /// 'Tick' the smol thread executor.
 ///
 /// Poll promise will call this for you when using [`Promise::block_until_ready`] and friends.
-/// If so desired [`Promise::poll`] will run this for you with the `tick-poll` feature.
+/// If so desired [`Promise::poll`] will run this for you with the `smol_tick_poll` feature.
 #[cfg(feature = "smol")]
 pub fn tick() -> bool {
     crate::EXECUTOR.try_tick()
@@ -143,7 +151,7 @@ pub fn tick() -> bool {
 /// 'Tick' the smol local thread executor.
 ///
 /// Poll promise will call this for you when using [`Promise::block_until_ready`] and friends.
-/// If so desired [`Promise::poll`] will run this for you with the `tick-poll` feature.
+/// If so desired [`Promise::poll`] will run this for you with the `smol_tick_poll` feature.
 #[cfg(feature = "smol")]
 pub fn tick_local() -> bool {
     crate::LOCAL_EXECUTOR.with(|exec| exec.try_tick())
@@ -197,6 +205,7 @@ mod test {
             }
             e
         });
+        #[cfg(not(feature = "smol_tick_poll"))]
         crate::tick();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -224,6 +233,7 @@ mod test {
         let promise = Promise::spawn_local(async move {
             std::thread::sleep(std::time::Duration::from_secs(1));
         });
+        #[cfg(not(feature = "smol_tick_poll"))]
         crate::tick_local();
 
         assert!(promise.ready().is_some(), "was not finished");
@@ -233,6 +243,7 @@ mod test {
     #[cfg(feature = "smol")]
     fn it_can_run_async_functions() {
         let promise = Promise::spawn_async(async move { something_async().await });
+        #[cfg(not(feature = "smol_tick_poll"))]
         crate::tick();
 
         assert!(promise.block_and_take(), "example.com is ipv4");
@@ -249,6 +260,7 @@ mod test {
     #[cfg(feature = "smol")]
     fn it_can_run_async_functions_locally() {
         let promise = Promise::spawn_local(async move { something_async().await });
+        #[cfg(not(feature = "smol_tick_poll"))]
         crate::tick_local();
 
         assert!(promise.block_and_take(), "example.com is ipv4");
