@@ -13,18 +13,22 @@ keywords = ["promise", "poll", "async", "gamedev", "gui"]
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
 
 [package.metadata.docs.rs]
-features = ["tokio"]
+features = ["tokio", "smol"]
 
 [lib]
 
 [dependencies]
 static_assertions = "1.1"
-
-tokio = { version = "1", features = ["rt", "rt-multi-thread"], optional = true }
+smol =  { version = "1.2.5", optional =  true }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros"], optional = true }
 
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 
+[dev-dependencies]
+async-net = "1.7.0"
+
 [features]
 # Allow spawning a task when running in a web browser.
 web = ["wasm-bindgen", "wasm-bindgen-futures"]
+smol_tick_poll = []
