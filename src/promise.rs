@@ -1,3 +1,5 @@
+use std::cell::UnsafeCell;
+
 /// Used to send a result to a [`Promise`].
 ///
 /// You must call [`Self::send`] with a value eventually.
@@ -89,7 +91,7 @@ impl<T: Send + 'static> Promise<T> {
         (
             Sender(tx),
             Self {
-                data: PromiseImpl::Pending(rx),
+                data: PromiseImpl(UnsafeCell::new(PromiseStatus::Pending(rx))),
                 task_type: TaskType::None,
 
                 #[cfg(feature = "tokio")]
@@ -104,7 +106,7 @@ impl<T: Send + 'static> Promise<T> {
     /// Create a promise that already has the result.
     pub fn from_ready(value: T) -> Self {
         Self {
-            data: PromiseImpl::Ready(value),
+            data: PromiseImpl(UnsafeCell::new(PromiseStatus::Ready(value))),
             task_type: TaskType::None,
 
             #[cfg(feature = "tokio")]
@@ -318,9 +320,9 @@ impl<T: Send + 'static> Promise<T> {
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
     pub fn block_and_take(self) -> T {
         self.data.block_until_ready(self.task_type);
-        match self.data {
-            PromiseImpl::Pending(_) => unreachable!(),
-            PromiseImpl::Ready(value) => value,
+        match self.data.0.into_inner() {
+            PromiseStatus::Pending(_) => unreachable!(),
+            PromiseStatus::Ready(value) => value,
         }
     }
 
@@ -357,66 +359,72 @@ impl<T: Send + 'static> Promise<T> {
 
 // ----------------------------------------------------------------------------
 
-enum PromiseImpl<T: Send + 'static> {
+enum PromiseStatus<T: Send + 'static> {
     Pending(std::sync::mpsc::Receiver<T>),
     Ready(T),
 }
 
+struct PromiseImpl<T: Send + 'static>(UnsafeCell<PromiseStatus<T>>);
+
 impl<T: Send + 'static> PromiseImpl<T> {
     #[allow(unused_variables)]
     fn poll_mut(&mut self, task_type: TaskType) -> std::task::Poll<&mut T> {
-        match self {
-            Self::Pending(rx) => {
+        let inner = self.0.get_mut();
+        match inner {
+            PromiseStatus::Pending(rx) => {
                 #[cfg(all(feature = "smol", feature = "smol_tick_poll"))]
                 Self::tick(task_type);
                 if let Ok(value) = rx.try_recv() {
-                    *self = Self::Ready(value);
-                    match self {
-                        Self::Ready(ref mut value) => std::task::Poll::Ready(value),
-                        Self::Pending(_) => unreachable!(),
+                    *inner = PromiseStatus::Ready(value);
+                    match inner {
+                        PromiseStatus::Ready(ref mut value) => std::task::Poll::Ready(value),
+                        PromiseStatus::Pending(_) => unreachable!(),
                     }
                 } else {
                     std::task::Poll::Pending
                 }
             }
-            Self::Ready(ref mut value) => std::task::Poll::Ready(value),
+            PromiseStatus::Ready(ref mut value) => std::task::Poll::Ready(value),
         }
     }
 
     /// Returns either the completed promise object or the promise itself if it is not completed yet.
     fn try_take(self) -> Result<T, Self> {
-        match self {
-            Self::Pending(ref rx) => match rx.try_recv() {
+        let inner = self.0.into_inner();
+        match inner {
+            PromiseStatus::Pending(ref rx) => match rx.try_recv() {
                 Ok(value) => Ok(value),
-                Err(std::sync::mpsc::TryRecvError::Empty) => Err(self),
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    Err(PromiseImpl(UnsafeCell::new(inner)))
+                }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     panic!("The Promise Sender was dropped")
                 }
             },
-            Self::Ready(value) => Ok(value),
+            PromiseStatus::Ready(value) => Ok(value),
         }
     }
 
     #[allow(unsafe_code)]
     #[allow(unused_variables)]
     fn poll(&self, task_type: TaskType) -> std::task::Poll<&T> {
-        match self {
-            Self::Pending(rx) => {
+        let this = unsafe {
+            // SAFETY: This is safe since Promise (and PromiseData) are !Sync and thus
+            // need external synchronization anyway. We can only transition from
+            // Pending->Ready, not the other way around, so once we're Ready we'll
+            // stay ready.
+            self.0.get().as_mut().expect("UnsafeCell should be valid")
+        };
+        match this {
+            PromiseStatus::Pending(rx) => {
                 #[cfg(all(feature = "smol", feature = "smol_tick_poll"))]
                 Self::tick(task_type);
                 match rx.try_recv() {
                     Ok(value) => {
-                        // SAFETY: This is safe since Promise (and PromiseData) are !Sync and thus
-                        // need external synchronization anyway. We can only transition from
-                        // Pending->Ready, not the other way around, so once we're Ready we'll
-                        // stay ready.
-                        unsafe {
-                            let myself = self as *const Self as *mut Self;
-                            *myself = Self::Ready(value);
-                        }
-                        match self {
-                            Self::Ready(ref value) => std::task::Poll::Ready(value),
-                            Self::Pending(_) => unreachable!(),
+                        *this = PromiseStatus::Ready(value);
+                        match this {
+                            PromiseStatus::Ready(ref value) => std::task::Poll::Ready(value),
+                            PromiseStatus::Pending(_) => unreachable!(),
                         }
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => std::task::Poll::Pending,
@@ -425,7 +433,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
                     }
                 }
             }
-            Self::Ready(ref value) => std::task::Poll::Ready(value),
+            PromiseStatus::Ready(ref value) => std::task::Poll::Ready(value),
         }
     }
 
@@ -438,16 +446,17 @@ impl<T: Send + 'static> PromiseImpl<T> {
             #[cfg(not(feature = "smol_tick_poll"))]
             Self::tick(task_type);
         }
-        match self {
-            Self::Pending(rx) => {
+        let inner = self.0.get_mut();
+        match inner {
+            PromiseStatus::Pending(rx) => {
                 let value = rx.recv().expect("The Promise Sender was dropped");
-                *self = Self::Ready(value);
-                match self {
-                    Self::Ready(ref mut value) => value,
-                    Self::Pending(_) => unreachable!(),
+                *inner = PromiseStatus::Ready(value);
+                match inner {
+                    PromiseStatus::Ready(ref mut value) => value,
+                    PromiseStatus::Pending(_) => unreachable!(),
                 }
             }
-            Self::Ready(ref mut value) => value,
+            PromiseStatus::Ready(ref mut value) => value,
         }
     }
 
@@ -461,23 +470,23 @@ impl<T: Send + 'static> PromiseImpl<T> {
             #[cfg(not(feature = "smol_tick_poll"))]
             Self::tick(task_type);
         }
-        match self {
-            Self::Pending(rx) => {
+        let this = unsafe {
+            // SAFETY: This is safe since Promise (and PromiseData) are !Sync and thus
+            // need external synchronization anyway. We can only transition from
+            // Pending->Ready, not the other way around, so once we're Ready we'll
+            // stay ready.
+            self.0.get().as_mut().expect("UnsafeCell should be valid")
+        };
+        match this {
+            PromiseStatus::Pending(rx) => {
                 let value = rx.recv().expect("The Promise Sender was dropped");
-                // SAFETY: This is safe since `Promise` (and `PromiseData`) are `!Sync` and thus
-                // need external synchronization anyway. We can only transition from
-                // Pending->Ready, not the other way around, so once we're Ready we'll
-                // stay ready.
-                unsafe {
-                    let myself = self as *const Self as *mut Self;
-                    *myself = Self::Ready(value);
-                }
-                match self {
-                    Self::Ready(ref value) => value,
-                    Self::Pending(_) => unreachable!(),
+                *this = PromiseStatus::Ready(value);
+                match this {
+                    PromiseStatus::Ready(ref value) => value,
+                    PromiseStatus::Pending(_) => unreachable!(),
                 }
             }
-            Self::Ready(ref value) => value,
+            PromiseStatus::Ready(ref value) => value,
         }
     }
 
