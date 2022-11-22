@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor `Promise::spawn_async` into two new functions, `Promise::spawn_async` and `Promise::spawn_local`
 - `smol_tick_poll` feature to automatically tick the smol executor when polling promises
 
+### Fixed
+- Undefined behavior in `PromiseImpl::poll` and `PromiseImpl::block_until_ready`
+
 ## [0.2.0] - 2022-10-25
 ### Added
 - `web` feature to enable `Promise::spawn_async` using [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
