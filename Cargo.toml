@@ -21,6 +21,7 @@ features = ["tokio", "smol"]
 static_assertions = "1.1"
 smol =  { version = "1.2.5", optional =  true }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros"], optional = true }
+async-std = { version = "1.12", optional = true }
 
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
