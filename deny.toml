@@ -24,6 +24,7 @@ deny = [
 skip = [
 ]
 skip-tree = [
+    { name = "async-io", version = "<= 1.12.0" }
 ]
 
 

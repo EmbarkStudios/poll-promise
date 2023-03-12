@@ -67,10 +67,25 @@ pub struct Promise<T: Send + 'static> {
 
     #[cfg(feature = "smol")]
     smol_task: Option<smol::Task<()>>,
+
+    #[cfg(feature = "async-std")]
+    async_std_join_handle: Option<async_std::task::JoinHandle<()>>,
 }
 
-#[cfg(all(feature = "tokio", feature = "web"))]
-compile_error!("You cannot specify both the 'tokio' and 'web' feature");
+#[cfg(all(
+    not(docsrs),
+    any(
+        all(feature = "tokio", feature = "smol"),
+        all(feature = "tokio", feature = "async-std"),
+        all(feature = "tokio", feature = "web"),
+        all(feature = "smol", feature = "async-std"),
+        all(feature = "smol", feature = "web"),
+        all(feature = "async-std", feature = "web"),
+    )
+))]
+compile_error!(
+    "You can only specify one of the executor features: 'tokio', 'smol', 'async-std' or 'web'"
+);
 
 // Ensure that Promise is !Sync, confirming the safety of the unsafe code.
 static_assertions::assert_not_impl_all!(Promise<u32>: Sync);
@@ -97,6 +112,9 @@ impl<T: Send + 'static> Promise<T> {
                 #[cfg(feature = "tokio")]
                 join_handle: None,
 
+                #[cfg(feature = "async-std")]
+                async_std_join_handle: None,
+
                 #[cfg(feature = "smol")]
                 smol_task: None,
             },
@@ -111,6 +129,9 @@ impl<T: Send + 'static> Promise<T> {
 
             #[cfg(feature = "tokio")]
             join_handle: None,
+
+            #[cfg(feature = "async-std")]
+            async_std_join_handle: None,
 
             #[cfg(feature = "smol")]
             smol_task: None,
@@ -144,7 +165,7 @@ impl<T: Send + 'static> Promise<T> {
     /// # use poll_promise::Promise;
     /// let promise = Promise::spawn_async(async move { something_async().await });
     /// ```
-    #[cfg(any(feature = "tokio", feature = "smol"))]
+    #[cfg(any(feature = "tokio", feature = "smol", feature = "async-std"))]
     pub fn spawn_async(future: impl std::future::Future<Output = T> + 'static + Send) -> Self {
         let (sender, mut promise) = Self::new();
         promise.task_type = TaskType::Async;
@@ -159,6 +180,14 @@ impl<T: Send + 'static> Promise<T> {
         {
             promise.smol_task =
                 Some(crate::EXECUTOR.spawn(async move { sender.send(future.await) }));
+        }
+
+        #[cfg(feature = "async-std")]
+        {
+            promise.async_std_join_handle =
+                Some(async_std::task::spawn(
+                    async move { sender.send(future.await) },
+                ));
         }
 
         promise
@@ -226,15 +255,26 @@ impl<T: Send + 'static> Promise<T> {
     /// # use poll_promise::Promise;
     /// let promise = Promise::spawn_blocking(move || something_cpu_intensive());
     /// ```
-    #[cfg(feature = "tokio")]
+    #[cfg(any(feature = "tokio", feature = "async-std"))]
     pub fn spawn_blocking<F>(f: F) -> Self
     where
         F: FnOnce() -> T + Send + 'static,
     {
         let (sender, mut promise) = Self::new();
-        promise.join_handle = Some(tokio::task::spawn(async move {
-            sender.send(tokio::task::block_in_place(f));
-        }));
+        #[cfg(feature = "tokio")]
+        {
+            promise.join_handle = Some(tokio::task::spawn(async move {
+                sender.send(tokio::task::block_in_place(f));
+            }));
+        }
+
+        #[cfg(feature = "async-std")]
+        {
+            promise.async_std_join_handle = Some(async_std::task::spawn_blocking(move || {
+                sender.send(f());
+            }));
+        }
+
         promise
     }
 
@@ -294,7 +334,10 @@ impl<T: Send + 'static> Promise<T> {
             task_type: self.task_type,
 
             #[cfg(feature = "tokio")]
-            join_handle: self.join_handle,
+            join_handle: None,
+
+            #[cfg(feature = "async-std")]
+            async_std_join_handle: None,
 
             #[cfg(feature = "smol")]
             smol_task: self.smol_task,

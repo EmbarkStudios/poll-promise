@@ -46,7 +46,11 @@
 //! poll-promise will automatically tick the smol executor with this feature disabled for you when using [`Promise::block_until_ready`]
 //! and friends, however.
 //!
+//! ### `async-std`
+//! If you enable the `async-std` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_blocking`]
+//! which will spawn tasks in the surrounding async-std runtime.
 
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 // BEGIN - Embark standard lints v6 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section
 // for more info see: <https://github.com/EmbarkStudios/rust-ecosystem/issues/59>
@@ -188,6 +192,14 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "async-std")]
+    fn it_runs_async_threaded() {
+        let promise = Promise::spawn_async(async move { 0 });
+
+        assert_eq!(0, promise.block_and_take());
+    }
+
+    #[test]
     #[cfg(feature = "smol")]
     fn it_runs_locally() {
         let promise = Promise::spawn_local(async move { 0 });
@@ -215,6 +227,21 @@ mod test {
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "tokio")]
     async fn it_runs_background() {
+        let promise = Promise::spawn_async(async move {
+            let mut e = 0;
+            for i in -10000..0 {
+                e += i;
+            }
+            e
+        });
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        assert!(promise.ready().is_some(), "was not finished");
+    }
+
+    #[test]
+    #[cfg(feature = "async-std")]
+    fn it_runs_background() {
         let promise = Promise::spawn_async(async move {
             let mut e = 0;
             for i in -10000..0 {
@@ -257,6 +284,14 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "async-std")]
+    fn it_can_run_async_functions() {
+        let promise = Promise::spawn_async(async move { something_async().await });
+
+        assert!(promise.block_and_take(), "example.com is ipv4");
+    }
+
+    #[test]
     #[cfg(feature = "smol")]
     fn it_can_run_async_functions_locally() {
         let promise = Promise::spawn_local(async move { something_async().await });
@@ -266,7 +301,7 @@ mod test {
         assert!(promise.block_and_take(), "example.com is ipv4");
     }
 
-    #[cfg(any(feature = "smol", feature = "tokio"))]
+    #[cfg(any(feature = "smol", feature = "tokio", feature = "async-std"))]
     async fn something_async() -> bool {
         async_net::resolve("example.com:80").await.unwrap()[0].is_ipv4()
     }

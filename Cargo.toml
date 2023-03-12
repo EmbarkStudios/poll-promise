@@ -13,7 +13,8 @@ keywords = ["promise", "poll", "async", "gamedev", "gui"]
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
 
 [package.metadata.docs.rs]
-features = ["tokio", "smol"]
+features = ["tokio", "smol", "async-std"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
 
@@ -21,6 +22,7 @@ features = ["tokio", "smol"]
 static_assertions = "1.1"
 smol =  { version = "1.2.5", optional =  true }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros"], optional = true }
+async-std = { version = "1.12", optional = true }
 
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
