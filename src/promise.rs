@@ -72,8 +72,17 @@ pub struct Promise<T: Send + 'static> {
     join_handle: Option<async_std::task::JoinHandle<()>>,
 }
 
-#[cfg(all(feature = "tokio", feature = "web"))]
-compile_error!("You cannot specify both the 'tokio' and 'web' feature");
+#[cfg(any(
+    all(feature = "tokio", feature = "smol"),
+    all(feature = "tokio", feature = "async-std"),
+    all(feature = "tokio", feature = "web"),
+    all(feature = "smol", feature = "async-std"),
+    all(feature = "smol", feature = "web"),
+    all(feature = "async-std", feature = "web"),
+))]
+compile_error!(
+    "You can only specify one of the executor features: 'tokio', 'smol', 'async-std' or 'web'"
+);
 
 // Ensure that Promise is !Sync, confirming the safety of the unsafe code.
 static_assertions::assert_not_impl_all!(Promise<u32>: Sync);
