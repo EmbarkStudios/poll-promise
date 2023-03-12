@@ -46,6 +46,9 @@
 //! poll-promise will automatically tick the smol executor with this feature disabled for you when using [`Promise::block_until_ready`]
 //! and friends, however.
 //!
+//! ### `async-std`
+//! If you enable the `async-std` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_blocking`]
+//! which will spawn tasks in the surrounding async-std runtime.
 
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 // BEGIN - Embark standard lints v6 for Rust 1.55+
