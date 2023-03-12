@@ -47,6 +47,7 @@
 //! and friends, however.
 //!
 
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 // BEGIN - Embark standard lints v6 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section
 // for more info see: <https://github.com/EmbarkStudios/rust-ecosystem/issues/59>

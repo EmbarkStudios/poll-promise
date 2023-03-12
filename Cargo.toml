@@ -13,7 +13,8 @@ keywords = ["promise", "poll", "async", "gamedev", "gui"]
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
 
 [package.metadata.docs.rs]
-features = ["tokio", "smol"]
+features = ["tokio", "smol", "async-std"]
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
 
