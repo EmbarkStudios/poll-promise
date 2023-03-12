@@ -54,6 +54,8 @@ jobs:
         run: cargo test --release -F smol -F smol_tick_poll
       - name: cargo test tokio
         run: cargo test --release -F tokio
+      - name: cargo test async-std
+        run: cargo test --release -F async-std
 
   # TODO: Remove this check if you don't use cargo-deny in the repo
   deny-check:
