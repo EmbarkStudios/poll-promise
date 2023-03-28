@@ -20,7 +20,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 static_assertions = "1.1"
-smol =  { version = "1.2.5", optional =  true }
+smol =  { package = "async-executor", version = "1.2.5", optional =  true }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros"], optional = true }
 async-std = { version = "1.12", optional = true }
 
