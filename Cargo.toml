@@ -13,14 +13,14 @@ keywords = ["promise", "poll", "async", "gamedev", "gui"]
 include = ["LICENSE-APACHE", "LICENSE-MIT", "**/*.rs", "Cargo.toml"]
 
 [package.metadata.docs.rs]
-features = ["tokio", "smol", "async-std"]
+features = ["tokio", "async_executor", "async-std"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
 
 [dependencies]
 static_assertions = "1.1"
-smol =  { package = "async-executor", version = "1.2.5", optional =  true }
+async-executor = { version = "1.5.0", optional = true }
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros"], optional = true }
 async-std = { version = "1.12", optional = true }
 
@@ -33,4 +33,4 @@ async-net = "1.7.0"
 [features]
 # Allow spawning a task when running in a web browser.
 web = ["wasm-bindgen", "wasm-bindgen-futures"]
-smol_tick_poll = []
+async_executor_tick_poll = []

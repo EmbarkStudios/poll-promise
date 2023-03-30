@@ -65,8 +65,8 @@ pub struct Promise<T: Send + 'static> {
     #[cfg(feature = "tokio")]
     join_handle: Option<tokio::task::JoinHandle<()>>,
 
-    #[cfg(feature = "smol")]
-    smol_task: Option<smol::Task<()>>,
+    #[cfg(feature = "async-executor")]
+    async_executor_task: Option<async_executor::Task<()>>,
 
     #[cfg(feature = "async-std")]
     async_std_join_handle: Option<async_std::task::JoinHandle<()>>,
@@ -75,16 +75,16 @@ pub struct Promise<T: Send + 'static> {
 #[cfg(all(
     not(docsrs),
     any(
-        all(feature = "tokio", feature = "smol"),
+        all(feature = "tokio", feature = "async-executor"),
         all(feature = "tokio", feature = "async-std"),
         all(feature = "tokio", feature = "web"),
-        all(feature = "smol", feature = "async-std"),
-        all(feature = "smol", feature = "web"),
+        all(feature = "async-executor", feature = "async-std"),
+        all(feature = "async-executor", feature = "web"),
         all(feature = "async-std", feature = "web"),
     )
 ))]
 compile_error!(
-    "You can only specify one of the executor features: 'tokio', 'smol', 'async-std' or 'web'"
+    "You can only specify one of the executor features: 'tokio', 'async_executor', 'async-std' or 'web'"
 );
 
 // Ensure that Promise is !Sync, confirming the safety of the unsafe code.
@@ -115,8 +115,8 @@ impl<T: Send + 'static> Promise<T> {
                 #[cfg(feature = "async-std")]
                 async_std_join_handle: None,
 
-                #[cfg(feature = "smol")]
-                smol_task: None,
+                #[cfg(feature = "async-executor")]
+                async_executor_task: None,
             },
         )
     }
@@ -133,8 +133,8 @@ impl<T: Send + 'static> Promise<T> {
             #[cfg(feature = "async-std")]
             async_std_join_handle: None,
 
-            #[cfg(feature = "smol")]
-            smol_task: None,
+            #[cfg(feature = "async-executor")]
+            async_executor_task: None,
         }
     }
 
@@ -165,7 +165,7 @@ impl<T: Send + 'static> Promise<T> {
     /// # use poll_promise::Promise;
     /// let promise = Promise::spawn_async(async move { something_async().await });
     /// ```
-    #[cfg(any(feature = "tokio", feature = "smol", feature = "async-std"))]
+    #[cfg(any(feature = "tokio", feature = "async-executor", feature = "async-std"))]
     pub fn spawn_async(future: impl std::future::Future<Output = T> + 'static + Send) -> Self {
         let (sender, mut promise) = Self::new();
         promise.task_type = TaskType::Async;
@@ -176,9 +176,9 @@ impl<T: Send + 'static> Promise<T> {
                 Some(tokio::task::spawn(async move { sender.send(future.await) }));
         }
 
-        #[cfg(feature = "smol")]
+        #[cfg(feature = "async-executor")]
         {
-            promise.smol_task =
+            promise.async_executor_task =
                 Some(crate::EXECUTOR.spawn(async move { sender.send(future.await) }));
         }
 
@@ -195,7 +195,7 @@ impl<T: Send + 'static> Promise<T> {
 
     /// Spawn a future. Runs it in the local thread.
     ///
-    /// You need to compile `poll-promise` with either the "tokio", "smol", or "web" feature for this to be available.
+    /// You need to compile `poll-promise` with either the "tokio", "async_executor", or "web" feature for this to be available.
     ///
     /// This is a convenience method, using [`Self::new`] with [`tokio::task::spawn_local`].
     /// Unlike [`Self::spawn_async`] this method does not require [`Send`].
@@ -207,7 +207,7 @@ impl<T: Send + 'static> Promise<T> {
     /// # use poll_promise::Promise;
     /// let promise = Promise::spawn_local(async move { something_async().await });
     /// ```
-    #[cfg(any(feature = "tokio", feature = "web", feature = "smol"))]
+    #[cfg(any(feature = "tokio", feature = "web", feature = "async-executor"))]
     pub fn spawn_local(future: impl std::future::Future<Output = T> + 'static) -> Self {
         // When using the web feature we don't mutate promise.
         #[allow(unused_mut)]
@@ -228,9 +228,9 @@ impl<T: Send + 'static> Promise<T> {
             wasm_bindgen_futures::spawn_local(async move { sender.send(future.await) });
         }
 
-        #[cfg(feature = "smol")]
+        #[cfg(feature = "async-executor")]
         {
-            promise.smol_task = Some(
+            promise.async_executor_task = Some(
                 crate::LOCAL_EXECUTOR
                     .with(|exec| exec.spawn(async move { sender.send(future.await) })),
             );
@@ -339,8 +339,8 @@ impl<T: Send + 'static> Promise<T> {
             #[cfg(feature = "async-std")]
             async_std_join_handle: None,
 
-            #[cfg(feature = "smol")]
-            smol_task: self.smol_task,
+            #[cfg(feature = "async-executor")]
+            async_executor_task: self.async_executor_task,
         })
     }
 
@@ -415,7 +415,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
         let inner = self.0.get_mut();
         match inner {
             PromiseStatus::Pending(rx) => {
-                #[cfg(all(feature = "smol", feature = "smol_tick_poll"))]
+                #[cfg(all(feature = "async-executor", feature = "async_executor_tick_poll"))]
                 Self::tick(task_type);
                 if let Ok(value) = rx.try_recv() {
                     *inner = PromiseStatus::Ready(value);
@@ -460,7 +460,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
         };
         match this {
             PromiseStatus::Pending(rx) => {
-                #[cfg(all(feature = "smol", feature = "smol_tick_poll"))]
+                #[cfg(all(feature = "async-executor", feature = "async_executor_tick_poll"))]
                 Self::tick(task_type);
                 match rx.try_recv() {
                     Ok(value) => {
@@ -483,10 +483,10 @@ impl<T: Send + 'static> PromiseImpl<T> {
     #[allow(unused_variables)]
     fn block_until_ready_mut(&mut self, task_type: TaskType) -> &mut T {
         // Constantly poll until we're ready.
-        #[cfg(feature = "smol")]
+        #[cfg(feature = "async-executor")]
         while self.poll(task_type).is_pending() {
             // Tick unless poll does it for us.
-            #[cfg(not(feature = "smol_tick_poll"))]
+            #[cfg(not(feature = "async_executor_tick_poll"))]
             Self::tick(task_type);
         }
         let inner = self.0.get_mut();
@@ -507,10 +507,10 @@ impl<T: Send + 'static> PromiseImpl<T> {
     #[allow(unused_variables)]
     fn block_until_ready(&self, task_type: TaskType) -> &T {
         // Constantly poll until we're ready.
-        #[cfg(feature = "smol")]
+        #[cfg(feature = "async-executor")]
         while self.poll(task_type).is_pending() {
             // Tick unless poll does it for us.
-            #[cfg(not(feature = "smol_tick_poll"))]
+            #[cfg(not(feature = "async_executor_tick_poll"))]
             Self::tick(task_type);
         }
         let this = unsafe {
@@ -533,7 +533,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
         }
     }
 
-    #[cfg(feature = "smol")]
+    #[cfg(feature = "async-executor")]
     fn tick(task_type: TaskType) {
         match task_type {
             TaskType::Local => {

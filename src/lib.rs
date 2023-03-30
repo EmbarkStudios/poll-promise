@@ -32,18 +32,20 @@
 //! If you enable the `web` feature you can use [`Promise::spawn_local`] which will spawn tasks using
 //! [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
 //!
-//! ### `smol`
-//! If you enable the `smol` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_local`]
-//! which will spawn tasks using the smol executor. Remember to tick the smol executor with [`tick`] and [`tick_local`].
+//! ### `async_executor`
+//! If you enable the `async_executor` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_local`]
+//! which will spawn tasks using the async_executor executor. Remember to tick the async_executor executor with [`tick`] and [`tick_local`].
+//! 
+//! Note that this is the same executor as used in the `smol` crate.
 //!
-//! ### `smol_tick_poll`
-//! Enabling the `smol_tick_poll` with `smol` calling [`Promise::poll`] will automatically tick the smol executor.
+//! ### `async_executor_tick_poll`
+//! Enabling the `async_executor_tick_poll` with `async_executor` calling [`Promise::poll`] will automatically tick the async_executor executor.
 //! This means you do not have to worry about calling [`tick`] but comes at the cost of loss of finer control over the executor.
 //!
-//! Since calling [`tick_local`] will block the current thread, running multiple local promises at once with `smol_tick_poll` enabled
+//! Since calling [`tick_local`] will block the current thread, running multiple local promises at once with `async_executor_tick_poll` enabled
 //! may also cause stuttering.
 //!
-//! poll-promise will automatically tick the smol executor with this feature disabled for you when using [`Promise::block_until_ready`]
+//! poll-promise will automatically tick the async_executor executor with this feature disabled for you when using [`Promise::block_until_ready`]
 //! and friends, however.
 //!
 //! ### `async-std`
@@ -136,27 +138,27 @@ mod promise;
 
 pub use promise::{Promise, Sender, TaskType};
 
-#[cfg(feature = "smol")]
-static EXECUTOR: smol::Executor<'static> = smol::Executor::new();
-#[cfg(feature = "smol")]
+#[cfg(feature = "async-executor")]
+static EXECUTOR: async_executor::Executor<'static> = async_executor::Executor::new();
+#[cfg(feature = "async-executor")]
 thread_local! {
-    static LOCAL_EXECUTOR: smol::LocalExecutor<'static> = smol::LocalExecutor::new();
+    static LOCAL_EXECUTOR: async_executor::LocalExecutor<'static> = async_executor::LocalExecutor::new();
 }
 
-/// 'Tick' the smol thread executor.
+/// 'Tick' the async_executor thread executor.
 ///
 /// Poll promise will call this for you when using [`Promise::block_until_ready`] and friends.
-/// If so desired [`Promise::poll`] will run this for you with the `smol_tick_poll` feature.
-#[cfg(feature = "smol")]
+/// If so desired [`Promise::poll`] will run this for you with the `async_executor_tick_poll` feature.
+#[cfg(feature = "async-executor")]
 pub fn tick() -> bool {
     crate::EXECUTOR.try_tick()
 }
 
-/// 'Tick' the smol local thread executor.
+/// 'Tick' the async_executor local thread executor.
 ///
 /// Poll promise will call this for you when using [`Promise::block_until_ready`] and friends.
-/// If so desired [`Promise::poll`] will run this for you with the `smol_tick_poll` feature.
-#[cfg(feature = "smol")]
+/// If so desired [`Promise::poll`] will run this for you with the `async_executor_tick_poll` feature.
+#[cfg(feature = "async-executor")]
 pub fn tick_local() -> bool {
     crate::LOCAL_EXECUTOR.with(|exec| exec.try_tick())
 }
@@ -176,7 +178,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "smol")]
+    #[cfg(feature = "async-executor")]
     fn it_runs_async_threaded() {
         let promise = Promise::spawn_async(async move { 0 });
 
@@ -200,7 +202,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "smol")]
+    #[cfg(feature = "async-executor")]
     fn it_runs_locally() {
         let promise = Promise::spawn_local(async move { 0 });
 
@@ -208,7 +210,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "smol")]
+    #[cfg(feature = "async-executor")]
     fn it_runs_background() {
         let promise = Promise::spawn_async(async move {
             let mut e = 0;
@@ -217,7 +219,7 @@ mod test {
             }
             e
         });
-        #[cfg(not(feature = "smol_tick_poll"))]
+        #[cfg(not(feature = "async_executor_tick_poll"))]
         crate::tick();
 
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -255,22 +257,22 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "smol")]
+    #[cfg(feature = "async-executor")]
     fn it_can_block() {
         let promise = Promise::spawn_local(async move {
             std::thread::sleep(std::time::Duration::from_secs(1));
         });
-        #[cfg(not(feature = "smol_tick_poll"))]
+        #[cfg(not(feature = "async_executor_tick_poll"))]
         crate::tick_local();
 
         assert!(promise.ready().is_some(), "was not finished");
     }
 
     #[test]
-    #[cfg(feature = "smol")]
+    #[cfg(feature = "async-executor")]
     fn it_can_run_async_functions() {
         let promise = Promise::spawn_async(async move { something_async().await });
-        #[cfg(not(feature = "smol_tick_poll"))]
+        #[cfg(not(feature = "async_executor_tick_poll"))]
         crate::tick();
 
         assert!(promise.block_and_take(), "example.com is ipv4");
@@ -292,16 +294,16 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "smol")]
+    #[cfg(feature = "async-executor")]
     fn it_can_run_async_functions_locally() {
         let promise = Promise::spawn_local(async move { something_async().await });
-        #[cfg(not(feature = "smol_tick_poll"))]
+        #[cfg(not(feature = "async_executor_tick_poll"))]
         crate::tick_local();
 
         assert!(promise.block_and_take(), "example.com is ipv4");
     }
 
-    #[cfg(any(feature = "smol", feature = "tokio", feature = "async-std"))]
+    #[cfg(any(feature = "async-executor", feature = "tokio", feature = "async-std"))]
     async fn something_async() -> bool {
         async_net::resolve("example.com:80").await.unwrap()[0].is_ipv4()
     }

@@ -50,8 +50,8 @@ jobs:
         # faster test execution time. If you don't have any heavy tests it
         # might be faster to take off release and just compile in debug
         run: cargo build --tests --release
-      - name: cargo test smol
-        run: cargo test --release -F smol -F smol_tick_poll
+      - name: cargo test async-executor
+        run: cargo test --release -F async-executor -F async_executor_tick_poll
       - name: cargo test tokio
         run: cargo test --release -F tokio
       - name: cargo test async-std
