@@ -21,36 +21,14 @@
 //! ```
 //!
 //! ## Features
-//! `poll-promise` can be used with any async runtime, but a few convenience methods are added
+//! `poll-promise` can be used with any async runtime (or without one!),
+//! but a few convenience methods are added
 //! when compiled with the following features:
 //!
-//! ### `tokio`
-//! If you enable the `tokio` feature you can use [`Promise::spawn_async`], [`Promise::spawn_local`] and [`Promise::spawn_blocking`]
-//! which will spawn tasks in the surrounding tokio runtime.
-//!
-//! ### `web`
-//! If you enable the `web` feature you can use [`Promise::spawn_local`] which will spawn tasks using
-//! [`wasm_bindgen_futures::spawn_local`](https://rustwasm.github.io/wasm-bindgen/api/wasm_bindgen_futures/fn.spawn_local.html).
-//!
-//! ### `smol`
-//! If you enable the `smol` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_local`]
-//! which will spawn tasks using the smol executor. Remember to tick the smol executor with [`tick`] and [`tick_local`].
-//!
-//! ### `smol_tick_poll`
-//! Enabling the `smol_tick_poll` with `smol` calling [`Promise::poll`] will automatically tick the smol executor.
-//! This means you do not have to worry about calling [`tick`] but comes at the cost of loss of finer control over the executor.
-//!
-//! Since calling [`tick_local`] will block the current thread, running multiple local promises at once with `smol_tick_poll` enabled
-//! may also cause stuttering.
-//!
-//! poll-promise will automatically tick the smol executor with this feature disabled for you when using [`Promise::block_until_ready`]
-//! and friends, however.
-//!
-//! ### `async-std`
-//! If you enable the `async-std` feature you can use [`Promise::spawn_async`] and [`Promise::spawn_blocking`]
-//! which will spawn tasks in the surrounding async-std runtime.
-
+#![doc = document_features::document_features!()]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+//!
+
 // BEGIN - Embark standard lints v6 for Rust 1.55+
 // do not change or add/remove here, but one can add exceptions after this section
 // for more info see: <https://github.com/EmbarkStudios/rust-ecosystem/issues/59>
@@ -143,7 +121,7 @@ thread_local! {
     static LOCAL_EXECUTOR: smol::LocalExecutor<'static> = smol::LocalExecutor::new();
 }
 
-/// 'Tick' the smol thread executor.
+/// 'Tick' the `smol` thread executor.
 ///
 /// Poll promise will call this for you when using [`Promise::block_until_ready`] and friends.
 /// If so desired [`Promise::poll`] will run this for you with the `smol_tick_poll` feature.
@@ -152,7 +130,7 @@ pub fn tick() -> bool {
     crate::EXECUTOR.try_tick()
 }
 
-/// 'Tick' the smol local thread executor.
+/// 'Tick' the `smol` local thread executor.
 ///
 /// Poll promise will call this for you when using [`Promise::block_until_ready`] and friends.
 /// If so desired [`Promise::poll`] will run this for you with the `smol_tick_poll` feature.
