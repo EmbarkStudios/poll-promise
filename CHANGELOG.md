@@ -6,12 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Support `async-std` executor [#15](https://github.com/EmbarkStudios/poll-promise/pull/15)
 - `smol` feature to enable the use of [`smol`](https://github.com/smol-rs/smol)
 - refactor `Promise::spawn_async` into two new functions, `Promise::spawn_async` and `Promise::spawn_local`
 - `smol_tick_poll` feature to automatically tick the smol executor when polling promises
 
+### Changed
+- `spawn_async` is now called `spawn_local` on web.
+
 ### Fixed
 - Undefined behavior in `PromiseImpl::poll` and `PromiseImpl::block_until_ready`
+
 
 ## [0.2.0] - 2022-10-25
 ### Added
