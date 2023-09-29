@@ -347,6 +347,7 @@ impl<T: Send + 'static> Promise<T> {
     /// Block execution until ready, then returns a reference to the value.
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
+    #[cfg(not(target_arch = "wasm32"))] // Not allowed to block on Wasm
     pub fn block_until_ready(&self) -> &T {
         self.data.block_until_ready(self.task_type)
     }
@@ -354,6 +355,7 @@ impl<T: Send + 'static> Promise<T> {
     /// Block execution until ready, then returns a mutable reference to the value.
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
+    #[cfg(not(target_arch = "wasm32"))] // Not allowed to block on Wasm
     pub fn block_until_ready_mut(&mut self) -> &mut T {
         self.data.block_until_ready_mut(self.task_type)
     }
@@ -361,6 +363,7 @@ impl<T: Send + 'static> Promise<T> {
     /// Block execution until ready, then returns the promised value and consumes the `Promise`.
     ///
     /// Panics if the connected [`Sender`] was dropped before a value was sent.
+    #[cfg(not(target_arch = "wasm32"))] // Not allowed to block on Wasm
     pub fn block_and_take(self) -> T {
         self.data.block_until_ready(self.task_type);
         match self.data.0.into_inner() {
@@ -481,6 +484,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
     }
 
     #[allow(unused_variables)]
+    #[cfg(not(target_arch = "wasm32"))] // Not allowed to block on Wasm
     fn block_until_ready_mut(&mut self, task_type: TaskType) -> &mut T {
         // Constantly poll until we're ready.
         #[cfg(feature = "smol")]
@@ -505,6 +509,7 @@ impl<T: Send + 'static> PromiseImpl<T> {
 
     #[allow(unsafe_code)]
     #[allow(unused_variables)]
+    #[cfg(not(target_arch = "wasm32"))] // Not allowed to block on Wasm
     fn block_until_ready(&self, task_type: TaskType) -> &T {
         // Constantly poll until we're ready.
         #[cfg(feature = "smol")]
